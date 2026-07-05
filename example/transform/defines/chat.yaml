@@ -1,0 +1,14 @@
+version: 1
+model_name: chat
+ctx_import: context
+
+rpcs:
+  - method: SendChat
+    request: transform.example.SendChatRequest
+    response: transform.example.SendChatResponse
+    ctx: context.Context
+
+notifies:
+  - method: ChatMessage
+    message: transform.example.ChatMessageNotify
+    ctx: context.Context

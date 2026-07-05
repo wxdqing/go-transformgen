@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package transformgen.options;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/wxdqing/go-transformgen/proto/options;options";
+
+enum MessageKind {
+  MESSAGE_KIND_UNSPECIFIED = 0;
+  MESSAGE_KIND_REQUEST = 1;
+  MESSAGE_KIND_RESPONSE = 2;
+  MESSAGE_KIND_NOTIFY = 3;
+}
+
+extend google.protobuf.MessageOptions {
+  uint32 message_id = 51001;
+  MessageKind message_kind = 51002;
+}
+
+extend google.protobuf.FileOptions {
+  uint32 message_id_min = 51003;
+  uint32 message_id_max = 51004;
+}

@@ -1,0 +1,17 @@
+# Build outputs
+/transformgen
+/bin/
+/dist/
+
+# Generated fixtures and temporary descriptor sets
+*.pbset
+*.tmp
+
+# Test and coverage output
+*.test
+coverage.out
+
+# Local editor/system files
+.DS_Store
+.idea/
+.vscode/

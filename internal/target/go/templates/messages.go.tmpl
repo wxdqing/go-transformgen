@@ -1,0 +1,22 @@
+package {{ .Package }}
+
+import (
+	{{ range .Imports -}}
+	{{ .Name }} "{{ .Path }}"
+	{{ end -}}
+	"github.com/wxdqing/go-transformgen/runtime/registry"
+	"google.golang.org/protobuf/proto"
+)
+
+{{ range .Messages -}}
+const {{ .ConstName }} uint32 = {{ .ID }}
+{{ end }}
+
+func RegisterMessages(reg registry.MessageRegistry) error {
+	{{ range .Messages -}}
+	if err := reg.Register{{ .KindSuffix }}(registry.MessageMeta{ID: {{ .ConstName }}, Kind: registry.{{ .Kind }}, FullName: "{{ .FullName }}"}, func() proto.Message { return &{{ .GoType }}{} }); err != nil {
+		return err
+	}
+	{{ end -}}
+	return nil
+}

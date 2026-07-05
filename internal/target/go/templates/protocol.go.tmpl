@@ -1,0 +1,145 @@
+package {{ .Package }}
+
+import (
+	"context"
+	"fmt"
+
+	bootstrap "gitee.com/wxdqing/fx-bootstrap"
+	"github.com/wxdqing/go-transformgen/runtime/frame"
+	"github.com/wxdqing/go-transformgen/runtime/registry"
+	"go.uber.org/fx"
+	"google.golang.org/protobuf/proto"
+)
+
+type HandlerModule interface {
+	ModuleName() string
+	Module() any
+}
+
+type HandlerModuleOut struct {
+	fx.Out
+
+	Module HandlerModule `group:"transformgen_handler_modules"`
+}
+
+type HandlerModuleWithBean[T HandlerModule] struct {
+	fx.Out
+
+	Module HandlerModule `group:"transformgen_handler_modules"`
+	Self   T
+}
+
+func NewHandlerModule(module HandlerModule) HandlerModuleOut {
+	return HandlerModuleOut{Module: module}
+}
+
+func NewHandlerModuleWithBean[T HandlerModule](module T) HandlerModuleWithBean[T] {
+	return HandlerModuleWithBean[T]{Module: module, Self: module}
+}
+
+type moduleParams struct {
+	fx.In
+
+	Modules []HandlerModule `group:"transformgen_handler_modules"`
+}
+
+type Provider struct {
+	bootstrap.NopHook
+	Codec frame.FrameCodec
+}
+
+var _ bootstrap.Provider = Provider{}
+
+func (p Provider) Register() any {
+	return func(pms moduleParams) *Module {
+		return NewModule(p.Codec, pms)
+	}
+}
+
+func (Provider) OnStart() any {
+	return func(ctx context.Context, m *Module) error {
+		return m.Start(ctx)
+	}
+}
+
+type Module struct {
+	Registry registry.Registry
+	Codec    frame.FrameCodec
+	modules  []HandlerModule
+}
+
+type Protocol = Module
+
+func NewModule(codec frame.FrameCodec, p moduleParams) *Module {
+	if codec == nil {
+		codec = frame.PacketFrameCodec{}
+	}
+	return &Module{Codec: codec, modules: p.Modules}
+}
+
+func NewProtocol(codec frame.FrameCodec) (*Protocol, error) {
+	m := NewModule(codec, moduleParams{})
+	if err := m.Start(context.Background()); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (m *Module) Start(_ context.Context) error {
+	if m == nil {
+		return fmt.Errorf("%w: nil protocol module", registry.ErrHandlerNotFound)
+	}
+	reg := registry.New()
+	if err := RegisterMessages(reg); err != nil {
+		return err
+	}
+	m.Registry = reg
+	for _, module := range m.modules {
+		if module == nil {
+			return fmt.Errorf("%w: nil handler module", registry.ErrInvalidMessageType)
+		}
+		if err := m.RegisterHandlers(module.ModuleName(), module.Module()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Module) RegisterHandlers(modelName string, impl any) error {
+	if m == nil || m.Registry == nil {
+		return fmt.Errorf("%w: nil protocol registry", registry.ErrHandlerNotFound)
+	}
+	return RegisterHandlers(m.Registry, modelName, impl)
+}
+
+func (m *Module) PackMessage(head frame.Head, msg proto.Message) ([]byte, func(), error) {
+	if m == nil {
+		return nil, func() {}, fmt.Errorf("%w: nil protocol", registry.ErrInvalidMessageType)
+	}
+	return PackMessage(m.Codec, head, msg)
+}
+
+func PackMessage(codec frame.FrameCodec, head frame.Head, msg proto.Message) ([]byte, func(), error) {
+	if codec == nil {
+		codec = frame.PacketFrameCodec{}
+	}
+	body, err := proto.Marshal(msg)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return codec.EncodeFrame(head, body)
+}
+
+func RegisterHandlers(reg registry.HandlerRegistry, modelName string, impl any) error {
+	switch modelName {
+	{{ range .Modules -}}
+	case {{ .ConstName }}:
+		if handler, ok := impl.({{ .InterfaceName }}); ok {
+			return register{{ .InterfaceName }}Handlers(reg, handler)
+		}
+		return fmt.Errorf("%w: %s", registry.ErrInvalidMessageType, modelName)
+	{{ end -}}
+	default:
+		return fmt.Errorf("%w: model %s", registry.ErrHandlerNotFound, modelName)
+	}
+}

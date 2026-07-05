@@ -1,0 +1,14 @@
+version: 1
+model_name: battle
+ctx_import: context
+
+rpcs:
+  - method: StartBattle
+    request: transform.example.StartBattleRequest
+    response: transform.example.StartBattleResponse
+    ctx: context.Context
+
+notifies:
+  - method: BattleState
+    message: transform.example.BattleStateNotify
+    ctx: context.Context

@@ -1,0 +1,78 @@
+package {{ .Package }}
+
+import (
+	{{ range .Imports -}}
+	{{ if .Name }}{{ .Name }} {{ end }}"{{ .Path }}"
+	{{ end -}}
+	"github.com/wxdqing/go-transformgen/runtime/frame"
+	"github.com/wxdqing/go-transformgen/runtime/registry"
+	"google.golang.org/protobuf/proto"
+)
+
+const {{ .ConstName }} = "{{ .Name }}"
+
+type {{ .InterfaceName }} interface {
+	{{ range .RPCs -}}
+	{{ .Method }}(ctx {{ .Ctx }}, req *{{ .RequestType }}) (*{{ .ResponseType }}, error)
+	{{ end -}}
+	{{ range .Notifies -}}
+	{{ .Method }}(ctx {{ .Ctx }}, msg *{{ .MessageType }}) error
+	{{ end -}}
+}
+
+func register{{ .InterfaceName }}Handlers(reg registry.HandlerRegistry, impl {{ .InterfaceName }}) error {
+	{{ range .RPCs -}}
+	if err := reg.RegisterRequestHandler({{ .ModelConst }}, {{ .RequestConst }}, {{ .ResponseConst }}, func(ctx any, req proto.Message) (proto.Message, error) {
+		typedCtx, ok := ctx.({{ .Ctx }})
+		if !ok {
+			return nil, registry.ErrInvalidContextType
+		}
+		typedReq, ok := req.(*{{ .RequestType }})
+		if !ok {
+			return nil, registry.ErrInvalidMessageType
+		}
+		return impl.{{ .Method }}(typedCtx, typedReq)
+	}); err != nil {
+		return err
+	}
+	{{ end -}}
+	{{ range .Notifies -}}
+	if err := reg.RegisterNotifyHandler({{ .ModelConst }}, {{ .MessageConst }}, func(ctx any, msg proto.Message) error {
+		typedCtx, ok := ctx.({{ .Ctx }})
+		if !ok {
+			return registry.ErrInvalidContextType
+		}
+		typedMsg, ok := msg.(*{{ .MessageType }})
+		if !ok {
+			return registry.ErrInvalidMessageType
+		}
+		return impl.{{ .Method }}(typedCtx, typedMsg)
+	}); err != nil {
+		return err
+	}
+	{{ end -}}
+	return nil
+}
+
+{{ range .RPCs -}}
+func Encode{{ .Method }}Request(codec frame.FrameCodec, requestID uint64, req *{{ .RequestType }}) ([]byte, func(), error) {
+	return PackMessage(codec, frame.Head{MessageID: {{ .RequestConst }}, RequestID: requestID}, req)
+}
+
+func Decode{{ .Method }}Response(messageID uint32, payload []byte) (*{{ .ResponseType }}, error) {
+	if messageID != {{ .ResponseConst }} {
+		return nil, registry.ErrMessageKindMismatch
+	}
+	var resp {{ .ResponseType }}
+	if err := proto.Unmarshal(payload, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+{{ end -}}
+
+{{ range .Notifies -}}
+func Encode{{ .Method }}Notify(codec frame.FrameCodec, msg *{{ .MessageType }}) ([]byte, func(), error) {
+	return PackMessage(codec, frame.Head{MessageID: {{ .MessageConst }}}, msg)
+}
+{{ end -}}

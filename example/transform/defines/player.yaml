@@ -1,0 +1,14 @@
+version: 1
+model_name: player
+ctx_import: context
+
+rpcs:
+  - method: Heartbeat
+    request: transform.example.HeartbeatRequest
+    response: transform.example.HeartbeatResponse
+    ctx: context.Context
+
+notifies:
+  - method: BattleFinished
+    message: transform.example.BattleFinishedNotify
+    ctx: context.Context
