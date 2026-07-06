@@ -19,11 +19,11 @@ BDD-style tests describe behavior from the caller perspective:
 - request-side callers encode frames without knowing transport details.
 - generator callers pass descriptor/YAML input and receive deterministic files.
 
-## Public Runtime APIs
+## Generated Runtime Support APIs
 
-### `runtime/registry`
+### Registry Support
 
-Provides:
+Generated Go runtime support provides:
 
 - `MessageKind`
 - `MessageMeta`
@@ -33,8 +33,7 @@ Provides:
 - `MessageRegistry`
 - `HandlerRegistry`
 - `Registry`
-- `New()`
-- `DefaultRegistry()`
+- `NewRegistry()`
 
 Required errors:
 
@@ -46,9 +45,9 @@ Required errors:
 - `ErrInvalidContextType`
 - `ErrInvalidMessageType`
 
-### `runtime/frame`
+### Frame Support
 
-Provides:
+Generated Go runtime support provides:
 
 - `Head`
 - `FrameCodec`
@@ -122,7 +121,7 @@ internal/target/go/templates/module.go.tmpl
 internal/target/go/templates/protocol.go.tmpl
 ```
 
-The protocol template emits `protocol.go` with `HandlerModule`, `HandlerModuleOut`, `HandlerModuleWithBean`, `Provider`, `Module`, `NewModule`, `NewProtocol`, `PackMessage`, `Module.RegisterHandlers`, and the package-level `RegisterHandlers` switch by model name. `Provider` implements `gitee.com/wxdqing/fx-bootstrap.Provider`, collects `HandlerModule` values from the `transformgen_handler_modules` fx group in the constructor, and registers messages plus handlers in `OnStart` through `Module.Start`. `NewProtocol(nil)` remains as a convenience wrapper and uses `runtime/frame.PacketFrameCodec`, whose implementation uses `gitee.com/wxdqing/go-utils/packet`.
+The protocol template emits `protocol.go` with `HandlerModule`, `HandlerModuleOut`, `HandlerModuleWithBean`, `Provider`, `Module`, `NewModule`, `NewProtocol`, `PackMessage`, `Module.RegisterHandlers`, and the package-level `RegisterHandlers` switch by model name. `Provider` implements `gitee.com/wxdqing/fx-bootstrap.Provider`, collects `HandlerModule` values from the `transformgen_handler_modules` fx group in the constructor, and registers messages plus handlers in `OnStart` through `Module.Start`. `NewProtocol(nil)` remains as a convenience wrapper and uses the generated `PacketFrameCodec`.
 
 The messages template emits `protocol_messages.go` with message constants and `RegisterMessages`.
 
@@ -137,15 +136,15 @@ When the generated package differs from the proto message package, the Go target
 ```text
 --proto-set <path>
 --defines-dir <path>
---target go
+--target go|csharp
 --side requester,responder
+--runtime import|emit
 --out <dir>
 --package <name>
---template-dir <dir>
 --go-import key=value
 ```
 
-First implementation may support only `--target go` and write Go files.
+Go defaults to `--runtime emit`, which writes runtime support files into the output package. `--runtime import` is only for projects that provide their own external frame/registry packages through `--go-import frame=...` and `--go-import registry=...`. C# supports runtime emit and can generate requester/responder protocol helpers without depending on Go runtime packages.
 
 ## BDD Acceptance Scenarios
 

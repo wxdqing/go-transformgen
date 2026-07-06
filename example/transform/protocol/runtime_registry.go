@@ -1,9 +1,22 @@
-package registry
+package protocolpb
 
 import (
+	"errors"
 	"fmt"
 
-	"google.golang.org/protobuf/proto"
+	proto "google.golang.org/protobuf/proto"
+)
+
+var (
+	ErrDuplicateMessageID  = errors.New("transformgen/registry: duplicate message id")
+	ErrUnknownMessageID    = errors.New("transformgen/registry: unknown message id")
+	ErrMessageKindMismatch = errors.New("transformgen/registry: message kind mismatch")
+	ErrDuplicateHandler    = errors.New("transformgen/registry: duplicate handler")
+	ErrHandlerNotFound     = errors.New("transformgen/registry: handler not found")
+	ErrInvalidContextType  = errors.New("transformgen/registry: invalid context type")
+	ErrInvalidMessageType  = errors.New("transformgen/registry: invalid message type")
+	ErrShortFrame          = errors.New("transformgen/frame: short frame")
+	ErrBodyLenMismatch     = errors.New("transformgen/frame: body length mismatch")
 )
 
 type MessageKind uint8
@@ -65,40 +78,36 @@ type notifyRoute struct {
 	handler   NotifyHandler
 }
 
-type Default struct {
+type defaultRegistry struct {
 	messages map[uint32]registeredMessage
 	requests map[uint32]requestRoute
 	notifies map[uint32]notifyRoute
 }
 
-func New() *Default {
-	return &Default{
+func NewRegistry() Registry {
+	return &defaultRegistry{
 		messages: make(map[uint32]registeredMessage),
 		requests: make(map[uint32]requestRoute),
 		notifies: make(map[uint32]notifyRoute),
 	}
 }
 
-func DefaultRegistry() *Default {
-	return New()
-}
-
-func (r *Default) RegisterRequest(meta MessageMeta, newMessage MessageFactory) error {
+func (r *defaultRegistry) RegisterRequest(meta MessageMeta, newMessage MessageFactory) error {
 	meta.Kind = MessageKindRequest
 	return r.registerMessage(meta, newMessage)
 }
 
-func (r *Default) RegisterResponse(meta MessageMeta, newMessage MessageFactory) error {
+func (r *defaultRegistry) RegisterResponse(meta MessageMeta, newMessage MessageFactory) error {
 	meta.Kind = MessageKindResponse
 	return r.registerMessage(meta, newMessage)
 }
 
-func (r *Default) RegisterNotify(meta MessageMeta, newMessage MessageFactory) error {
+func (r *defaultRegistry) RegisterNotify(meta MessageMeta, newMessage MessageFactory) error {
 	meta.Kind = MessageKindNotify
 	return r.registerMessage(meta, newMessage)
 }
 
-func (r *Default) registerMessage(meta MessageMeta, newMessage MessageFactory) error {
+func (r *defaultRegistry) registerMessage(meta MessageMeta, newMessage MessageFactory) error {
 	if r == nil {
 		return fmt.Errorf("%w: nil registry", ErrUnknownMessageID)
 	}
@@ -112,24 +121,23 @@ func (r *Default) registerMessage(meta MessageMeta, newMessage MessageFactory) e
 	return nil
 }
 
-func (r *Default) ParseRequest(messageID uint32, payload []byte) (proto.Message, error) {
+func (r *defaultRegistry) ParseRequest(messageID uint32, payload []byte) (proto.Message, error) {
 	return r.parseKind(messageID, payload, MessageKindRequest)
 }
 
-func (r *Default) ParseResponse(messageID uint32, payload []byte) (proto.Message, error) {
+func (r *defaultRegistry) ParseResponse(messageID uint32, payload []byte) (proto.Message, error) {
 	return r.parseKind(messageID, payload, MessageKindResponse)
 }
 
-func (r *Default) ParseNotify(messageID uint32, payload []byte) (proto.Message, error) {
+func (r *defaultRegistry) ParseNotify(messageID uint32, payload []byte) (proto.Message, error) {
 	return r.parseKind(messageID, payload, MessageKindNotify)
 }
 
-func (r *Default) ParseMessage(messageID uint32, payload []byte) (proto.Message, MessageMeta, error) {
-	msg, meta, err := r.parse(messageID, payload)
-	return msg, meta, err
+func (r *defaultRegistry) ParseMessage(messageID uint32, payload []byte) (proto.Message, MessageMeta, error) {
+	return r.parse(messageID, payload)
 }
 
-func (r *Default) parseKind(messageID uint32, payload []byte, kind MessageKind) (proto.Message, error) {
+func (r *defaultRegistry) parseKind(messageID uint32, payload []byte, kind MessageKind) (proto.Message, error) {
 	msg, meta, err := r.parse(messageID, payload)
 	if err != nil {
 		return nil, err
@@ -140,7 +148,7 @@ func (r *Default) parseKind(messageID uint32, payload []byte, kind MessageKind) 
 	return msg, nil
 }
 
-func (r *Default) parse(messageID uint32, payload []byte) (proto.Message, MessageMeta, error) {
+func (r *defaultRegistry) parse(messageID uint32, payload []byte) (proto.Message, MessageMeta, error) {
 	if r == nil {
 		return nil, MessageMeta{}, fmt.Errorf("%w: nil registry", ErrUnknownMessageID)
 	}
@@ -158,7 +166,7 @@ func (r *Default) parse(messageID uint32, payload []byte) (proto.Message, Messag
 	return msg, registered.meta, nil
 }
 
-func (r *Default) RegisterRequestHandler(modelName string, requestID uint32, responseID uint32, handler RequestHandler) error {
+func (r *defaultRegistry) RegisterRequestHandler(modelName string, requestID uint32, responseID uint32, handler RequestHandler) error {
 	if handler == nil {
 		return fmt.Errorf("%w: nil request handler for %d", ErrInvalidMessageType, requestID)
 	}
@@ -169,7 +177,7 @@ func (r *Default) RegisterRequestHandler(modelName string, requestID uint32, res
 	return nil
 }
 
-func (r *Default) RegisterNotifyHandler(modelName string, notifyID uint32, handler NotifyHandler) error {
+func (r *defaultRegistry) RegisterNotifyHandler(modelName string, notifyID uint32, handler NotifyHandler) error {
 	if handler == nil {
 		return fmt.Errorf("%w: nil notify handler for %d", ErrInvalidMessageType, notifyID)
 	}
@@ -180,7 +188,7 @@ func (r *Default) RegisterNotifyHandler(modelName string, notifyID uint32, handl
 	return nil
 }
 
-func (r *Default) DispatchRequest(ctx any, messageID uint32, payload []byte) (proto.Message, uint32, error) {
+func (r *defaultRegistry) DispatchRequest(ctx any, messageID uint32, payload []byte) (proto.Message, uint32, error) {
 	route, ok := r.requests[messageID]
 	if !ok {
 		return nil, 0, fmt.Errorf("%w: request %d", ErrHandlerNotFound, messageID)
@@ -196,7 +204,7 @@ func (r *Default) DispatchRequest(ctx any, messageID uint32, payload []byte) (pr
 	return resp, route.responseID, nil
 }
 
-func (r *Default) DispatchNotify(ctx any, messageID uint32, payload []byte) error {
+func (r *defaultRegistry) DispatchNotify(ctx any, messageID uint32, payload []byte) error {
 	route, ok := r.notifies[messageID]
 	if !ok {
 		return fmt.Errorf("%w: notify %d", ErrHandlerNotFound, messageID)
@@ -208,4 +216,4 @@ func (r *Default) DispatchNotify(ctx any, messageID uint32, payload []byte) erro
 	return route.handler(ctx, msg)
 }
 
-var _ Registry = (*Default)(nil)
+var _ Registry = (*defaultRegistry)(nil)

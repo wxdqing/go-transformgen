@@ -17,6 +17,24 @@ import (
 type Options struct {
 	Package string
 	Sides   []string
+	Imports ImportPaths
+	Runtime RuntimeMode
+}
+
+type RuntimeMode string
+
+const (
+	RuntimeModeImport RuntimeMode = "import"
+	RuntimeModeEmit   RuntimeMode = "emit"
+)
+
+type ImportPaths struct {
+	Frame     string
+	Registry  string
+	Proto     string
+	Context   string
+	FX        string
+	Bootstrap string
 }
 
 type File struct {
@@ -28,19 +46,38 @@ func Render(m *model.Model, opts Options) ([]File, error) {
 	if opts.Package == "" {
 		return nil, fmt.Errorf("go target: package is required")
 	}
-	view := buildView(m, opts)
-
-	protocol, err := renderFormatted("protocol.go", protocolTemplate, view)
+	opts = normalizeOptions(opts)
+	if opts.Runtime != RuntimeModeImport && opts.Runtime != RuntimeModeEmit {
+		return nil, fmt.Errorf("go target: unsupported runtime mode %q", opts.Runtime)
+	}
+	if opts.Runtime == RuntimeModeImport && (opts.Imports.Frame == "" || opts.Imports.Registry == "") {
+		return nil, fmt.Errorf("go target: runtime import requires frame and registry imports")
+	}
+	side, err := parseSides(opts.Sides)
 	if err != nil {
 		return nil, err
 	}
+	view := buildView(m, opts)
+	view.HasRequester = side.requester
+	view.HasResponder = side.responder
+	for i := range view.Modules {
+		view.Modules[i].HasRequester = side.requester
+		view.Modules[i].HasResponder = side.responder
+	}
+
 	messages, err := renderFormatted("protocol_messages.go", messagesTemplate, view)
 	if err != nil {
 		return nil, err
 	}
 	files := []File{
-		{Path: "protocol.go", Content: protocol},
 		{Path: "protocol_messages.go", Content: messages},
+	}
+	if side.responder {
+		protocol, err := renderFormatted("protocol.go", protocolTemplate, view)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, File{Path: "protocol.go", Content: protocol})
 	}
 	for _, module := range view.Modules {
 		content, err := renderFormatted(module.Name+".go", moduleTemplate, module)
@@ -49,26 +86,48 @@ func Render(m *model.Model, opts Options) ([]File, error) {
 		}
 		files = append(files, File{Path: module.Name + ".go", Content: content})
 	}
+	if opts.Runtime == RuntimeModeEmit {
+		frame, err := renderFormatted("runtime_frame.go", runtimeFrameTemplate, view)
+		if err != nil {
+			return nil, err
+		}
+		registry, err := renderFormatted("runtime_registry.go", runtimeRegistryTemplate, view)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files,
+			File{Path: "runtime_frame.go", Content: frame},
+			File{Path: "runtime_registry.go", Content: registry},
+		)
+	}
 	return files, nil
 }
 
 type viewModel struct {
-	Package  string
-	Imports  []importView
-	Modules  []moduleView
-	Messages []messageView
-	RPCs     []rpcView
-	Notifies []notifyView
+	Package        string
+	Imports        []importView
+	RuntimeImports RuntimeImports
+	Refs           refsView
+	HasRequester   bool
+	HasResponder   bool
+	Modules        []moduleView
+	Messages       []messageView
+	RPCs           []rpcView
+	Notifies       []notifyView
 }
 
 type moduleView struct {
-	Package       string
-	Imports       []importView
-	Name          string
-	ConstName     string
-	InterfaceName string
-	RPCs          []rpcView
-	Notifies      []notifyView
+	Package        string
+	Imports        []importView
+	RuntimeImports RuntimeImports
+	Refs           refsView
+	HasRequester   bool
+	HasResponder   bool
+	Name           string
+	ConstName      string
+	InterfaceName  string
+	RPCs           []rpcView
+	Notifies       []notifyView
 }
 
 type messageView struct {
@@ -83,6 +142,33 @@ type messageView struct {
 type importView struct {
 	Name string
 	Path string
+}
+
+type RuntimeImports struct {
+	Frame     string
+	Registry  string
+	Proto     string
+	Context   string
+	FX        string
+	Bootstrap string
+}
+
+type refsView struct {
+	FrameCodec             string
+	PacketFrameCodec       string
+	Head                   string
+	Registry               string
+	MessageRegistry        string
+	HandlerRegistry        string
+	MessageMeta            string
+	MessageKindRequest     string
+	MessageKindResponse    string
+	MessageKindNotify      string
+	RegistryNew            string
+	ErrHandlerNotFound     string
+	ErrInvalidMessageType  string
+	ErrInvalidContextType  string
+	ErrMessageKindMismatch string
 }
 
 type rpcView struct {
@@ -108,14 +194,18 @@ type notifyView struct {
 func buildView(m *model.Model, opts Options) viewModel {
 	seen := make(map[uint32]messageView)
 	imports := make(map[string]importView)
-	view := viewModel{Package: opts.Package}
+	runtimeImports := runtimeImports(opts)
+	refs := refs(opts.Runtime)
+	view := viewModel{Package: opts.Package, RuntimeImports: runtimeImports, Refs: refs}
 	for _, module := range m.Modules {
 		moduleImports := make(map[string]importView)
 		mv := moduleView{
-			Package:       opts.Package,
-			Name:          module.Name,
-			ConstName:     module.ConstName,
-			InterfaceName: module.InterfaceName,
+			Package:        opts.Package,
+			RuntimeImports: runtimeImports,
+			Refs:           refs,
+			Name:           module.Name,
+			ConstName:      module.ConstName,
+			InterfaceName:  module.InterfaceName,
 		}
 		for _, rpc := range module.RPCs {
 			req := messageFromDescriptor(rpc.Request, opts.Package)
@@ -263,6 +353,102 @@ func kindSuffix(kind descriptor.MessageKind) string {
 	}
 }
 
+type selectedSides struct {
+	requester bool
+	responder bool
+}
+
+func parseSides(sides []string) (selectedSides, error) {
+	if len(sides) == 0 {
+		return selectedSides{requester: true, responder: true}, nil
+	}
+	var out selectedSides
+	for _, side := range sides {
+		switch strings.TrimSpace(side) {
+		case "requester":
+			out.requester = true
+		case "responder":
+			out.responder = true
+		case "":
+		default:
+			return selectedSides{}, fmt.Errorf("go target: unsupported side %q", side)
+		}
+	}
+	if !out.requester && !out.responder {
+		return selectedSides{}, fmt.Errorf("go target: at least one side is required")
+	}
+	return out, nil
+}
+
+func normalizeOptions(opts Options) Options {
+	if opts.Runtime == "" {
+		opts.Runtime = RuntimeModeEmit
+	}
+	if opts.Imports.Proto == "" {
+		opts.Imports.Proto = "google.golang.org/protobuf/proto"
+	}
+	if opts.Imports.Context == "" {
+		opts.Imports.Context = "context"
+	}
+	if opts.Imports.FX == "" {
+		opts.Imports.FX = "go.uber.org/fx"
+	}
+	if opts.Imports.Bootstrap == "" {
+		opts.Imports.Bootstrap = "gitee.com/wxdqing/fx-bootstrap"
+	}
+	return opts
+}
+
+func runtimeImports(opts Options) RuntimeImports {
+	return RuntimeImports{
+		Frame:     opts.Imports.Frame,
+		Registry:  opts.Imports.Registry,
+		Proto:     opts.Imports.Proto,
+		Context:   opts.Imports.Context,
+		FX:        opts.Imports.FX,
+		Bootstrap: opts.Imports.Bootstrap,
+	}
+}
+
+func refs(mode RuntimeMode) refsView {
+	if mode == RuntimeModeEmit {
+		return refsView{
+			FrameCodec:             "FrameCodec",
+			PacketFrameCodec:       "PacketFrameCodec",
+			Head:                   "Head",
+			Registry:               "Registry",
+			MessageRegistry:        "MessageRegistry",
+			HandlerRegistry:        "HandlerRegistry",
+			MessageMeta:            "MessageMeta",
+			MessageKindRequest:     "MessageKindRequest",
+			MessageKindResponse:    "MessageKindResponse",
+			MessageKindNotify:      "MessageKindNotify",
+			RegistryNew:            "NewRegistry",
+			ErrHandlerNotFound:     "ErrHandlerNotFound",
+			ErrInvalidMessageType:  "ErrInvalidMessageType",
+			ErrInvalidContextType:  "ErrInvalidContextType",
+			ErrMessageKindMismatch: "ErrMessageKindMismatch",
+		}
+	}
+	return refsView{
+		FrameCodec:             "frame.FrameCodec",
+		PacketFrameCodec:       "frame.PacketFrameCodec",
+		Head:                   "frame.Head",
+		Registry:               "registry.Registry",
+		MessageRegistry:        "registry.MessageRegistry",
+		HandlerRegistry:        "registry.HandlerRegistry",
+		MessageMeta:            "registry.MessageMeta",
+		MessageKindRequest:     "registry.MessageKindRequest",
+		MessageKindResponse:    "registry.MessageKindResponse",
+		MessageKindNotify:      "registry.MessageKindNotify",
+		RegistryNew:            "registry.New",
+		ErrHandlerNotFound:     "registry.ErrHandlerNotFound",
+		ErrInvalidMessageType:  "registry.ErrInvalidMessageType",
+		ErrInvalidContextType:  "registry.ErrInvalidContextType",
+		ErrMessageKindMismatch: "registry.ErrMessageKindMismatch",
+	}
+}
+
 func executeTemplate(name, text string, data any) ([]byte, error) {
 	tmpl, err := template.New(name).Parse(text)
 	if err != nil {
@@ -295,3 +481,9 @@ var moduleTemplate string
 
 //go:embed templates/protocol.go.tmpl
 var protocolTemplate string
+
+//go:embed templates/runtime_frame.go.tmpl
+var runtimeFrameTemplate string
+
+//go:embed templates/runtime_registry.go.tmpl
+var runtimeRegistryTemplate string

@@ -19,12 +19,28 @@ const (
 )
 
 type Message struct {
-	ID            uint32
-	Kind          MessageKind
-	FullName      string
+	ID           uint32
+	Kind         MessageKind
+	FullName     string
+	ProtoPackage string
+	ProtoName    string
+	Go           GoMessage
+	CSharp       CSharpMessage
+
 	GoImportPath  string
 	GoPackageName string
 	GoTypeName    string
+}
+
+type GoMessage struct {
+	ImportPath  string
+	PackageName string
+	TypeName    string
+}
+
+type CSharpMessage struct {
+	Namespace string
+	TypeName  string
 }
 
 type Set struct {
@@ -59,9 +75,10 @@ func Load(path string) (*Set, error) {
 	}
 	for _, file := range files.GetFile() {
 		goImport, goPackage := splitGoPackage(file.GetOptions().GetGoPackage())
+		csharpNamespace := file.GetOptions().GetCsharpNamespace()
 		idRange := readMessageIDRange(file.GetOptions())
 		for _, msg := range file.GetMessageType() {
-			message, ok := readMessage(file.GetPackage(), goImport, goPackage, msg)
+			message, ok := readMessage(file.GetPackage(), goImport, goPackage, csharpNamespace, msg)
 			if !ok {
 				continue
 			}
@@ -127,7 +144,7 @@ func readMessageIDRange(opts *descriptorpb.FileOptions) messageIDRange {
 	return messageIDRange{has: true, min: min, max: max}
 }
 
-func readMessage(pkg string, goImport string, goPackage string, msg *descriptorpb.DescriptorProto) (Message, bool) {
+func readMessage(pkg string, goImport string, goPackage string, csharpNamespace string, msg *descriptorpb.DescriptorProto) (Message, bool) {
 	opts := msg.GetOptions()
 	if opts == nil || !proto.HasExtension(opts, options.E_MessageId) || !proto.HasExtension(opts, options.E_MessageKind) {
 		return Message{}, false
@@ -144,13 +161,22 @@ func readMessage(pkg string, goImport string, goPackage string, msg *descriptorp
 	if pkg != "" {
 		fullName = pkg + "." + fullName
 	}
+	goInfo := GoMessage{
+		ImportPath:  goImport,
+		PackageName: goPackage,
+		TypeName:    msg.GetName(),
+	}
 	return Message{
 		ID:            id,
 		Kind:          convertKind(kindValue),
 		FullName:      fullName,
-		GoImportPath:  goImport,
-		GoPackageName: goPackage,
-		GoTypeName:    msg.GetName(),
+		ProtoPackage:  pkg,
+		ProtoName:     msg.GetName(),
+		Go:            goInfo,
+		CSharp:        CSharpMessage{Namespace: csharpNamespace, TypeName: msg.GetName()},
+		GoImportPath:  goInfo.ImportPath,
+		GoPackageName: goInfo.PackageName,
+		GoTypeName:    goInfo.TypeName,
 	}, true
 }
 

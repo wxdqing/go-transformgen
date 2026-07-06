@@ -1,0 +1,8 @@
+namespace {{ .Namespace }};
+
+public static class MessageIds
+{
+{{ range .Messages -}}
+    public const uint {{ .ConstName }} = {{ .ID }};
+{{ end -}}
+}

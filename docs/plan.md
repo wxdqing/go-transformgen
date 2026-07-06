@@ -2,18 +2,18 @@
 
 ## Goal
 
-Build the first-stage `github.com/wxdqing/go-transformgen` module from `design.md`: runtime registry, frame codec, proto options, YAML definition parsing, descriptor loading, a language-neutral model, and a minimal Go code generator.
+Build the first-stage `github.com/wxdqing/go-transformgen` module from `design.md`: generated runtime support templates, proto options, YAML definition parsing, descriptor loading, a language-neutral model, and Go/C# code generators.
 
 ## Scope
 
-This plan implements the foundation only. It does not migrate the game runtime yet and does not generate non-Go code.
+This plan implements the foundation only. Runtime support is emitted into generated protocol packages by default.
 
 ## Deliverables
 
 - Independent Go module under `tools/source/transformgen`.
 - `proto/options/transform.proto` plus generated Go option code.
-- `runtime/registry` with external request/response/notify registration and dispatch.
-- `runtime/frame` with injectable frame codec and default `go-utils/packet` implementation.
+- Go runtime support templates with external request/response/notify registration and dispatch.
+- Go frame support templates with injectable frame codec and a standard-library default codec.
 - YAML parser for module definition files, with explicit `model_name` and filename consistency validation.
 - Descriptor reader for protobuf descriptor sets.
 - Minimal model builder joining descriptor messages and YAML methods.
@@ -23,9 +23,9 @@ This plan implements the foundation only. It does not migrate the game runtime y
 
 ## Architecture
 
-The module is split into stable runtime packages and internal generator packages.
+The module is split into proto option packages and internal generator packages.
 
-- Runtime packages are imported by generated code and application code.
+- Runtime support is emitted into generated code by target templates.
 - Internal packages are used only by `cmd/transformgen`.
 - The generator reads descriptor sets and YAML, builds an intermediate model, and renders target-specific templates.
 
@@ -36,20 +36,20 @@ tools/source/transformgen
   go.mod
   cmd/transformgen
   proto/options
-  runtime/frame
-  runtime/registry
   internal/define
   internal/descriptor
   internal/model
   internal/render
   internal/target/go
-  templates/go
+  internal/target/go/templates
+  internal/target/csharp
+  internal/target/csharp/templates
   docs
 ```
 
 ## Implementation Phases
 
-1. Runtime registry and frame codec.
+1. Generated runtime registry and frame codec templates.
 2. Proto options and descriptor loading.
 3. YAML definitions and model building.
 4. Go rendering and CLI.
@@ -61,10 +61,9 @@ The IR layer is `internal/model`. It is intentionally named after its responsibi
 
 - Keep abstractions small and concrete.
 - Do not auto-register generated code in `init()`.
-- Generated code depends only on public runtime/options packages.
-- Header wrapping is injected through `runtime/frame.FrameCodec`.
+- Generated code depends on proto options at schema-generation time and emits runtime support by default.
+- Header wrapping is injected through the generated `FrameCodec`.
 - Use `text/template` for generated files.
-- Use `go-utils/packet` only in the default Go frame codec.
 - YAML format version is fixed to `1` for the first implementation.
 
 ## Verification Commands

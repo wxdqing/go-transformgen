@@ -18,7 +18,8 @@ func TestLoadExtractsMessageOptionsAndGoTypes(t *testing.T) {
 				Name:    proto.String("heartbeat.proto"),
 				Package: proto.String("transform"),
 				Options: &descriptorpb.FileOptions{
-					GoPackage: proto.String("resource/protocol/src/transform;transformpb"),
+					GoPackage:       proto.String("resource/protocol/src/transform;transformpb"),
+					CsharpNamespace: proto.String("Plan.Transform"),
 				},
 				MessageType: []*descriptorpb.DescriptorProto{
 					message("HeartbeatRequest", 1001, options.MessageKind_MESSAGE_KIND_REQUEST),
@@ -44,7 +45,13 @@ func TestLoadExtractsMessageOptionsAndGoTypes(t *testing.T) {
 	if !ok {
 		t.Fatal("request message not found")
 	}
-	if req.ID != 1001 || req.Kind != MessageKindRequest || req.GoImportPath != "resource/protocol/src/transform" || req.GoPackageName != "transformpb" || req.GoTypeName != "HeartbeatRequest" {
+	if req.ID != 1001 || req.Kind != MessageKindRequest || req.FullName != "transform.HeartbeatRequest" || req.ProtoPackage != "transform" || req.ProtoName != "HeartbeatRequest" {
+		t.Fatalf("request language-neutral fields = %+v", req)
+	}
+	if req.Go.ImportPath != "resource/protocol/src/transform" || req.Go.PackageName != "transformpb" || req.Go.TypeName != "HeartbeatRequest" {
+		t.Fatalf("request Go = %+v", req)
+	}
+	if req.CSharp.Namespace != "Plan.Transform" || req.CSharp.TypeName != "HeartbeatRequest" {
 		t.Fatalf("request = %+v", req)
 	}
 	resp, ok := loaded.Message("transform.HeartbeatResponse")

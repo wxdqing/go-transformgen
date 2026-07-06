@@ -32,8 +32,35 @@ go run ./cmd/transformgen \
   --defines-dir example/transform/defines \
   --target go \
   --side requester,responder \
+  --runtime emit \
   --out example/transform/protocol \
   --package protocolpb
+```
+
+Generate Go requester-only helpers:
+
+```bash
+go run ./cmd/transformgen \
+  --proto-set example/transform/transform.pbset \
+  --defines-dir example/transform/defines \
+  --target go \
+  --side requester \
+  --runtime emit \
+  --out example/transform/protocol_requester \
+  --package protocolpb
+```
+
+Generate C# protocol helpers:
+
+```bash
+go run ./cmd/transformgen \
+  --proto-set example/transform/transform.pbset \
+  --defines-dir example/transform/defines \
+  --target csharp \
+  --side requester,responder \
+  --runtime emit \
+  --out example/transform/csharp \
+  --package Plan.Protocol
 ```
 
 `*.pbset` files are ignored and can be regenerated at any time.

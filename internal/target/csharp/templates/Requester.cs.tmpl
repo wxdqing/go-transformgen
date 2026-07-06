@@ -1,0 +1,31 @@
+namespace {{ .Namespace }};
+
+using System;
+using Google.Protobuf;
+
+public static class {{ .ClassName }}Requester
+{
+{{ range .RPCs -}}
+    public static byte[] Encode{{ .Method }}Request(IFrameCodec codec, ulong requestId, {{ .RequestType }} request)
+    {
+        codec ??= new PacketFrameCodec();
+        return codec.Encode(new FrameHead(MessageIds.{{ .RequestID }}, requestId: requestId), request.ToByteArray());
+    }
+
+    public static {{ .ResponseType }} Decode{{ .Method }}Response(uint messageId, byte[] payload)
+    {
+        if (messageId != MessageIds.{{ .ResponseID }})
+        {
+            throw new InvalidOperationException("message kind mismatch");
+        }
+        return {{ .ResponseType }}.Parser.ParseFrom(payload);
+    }
+{{ end -}}
+{{ range .Notifies -}}
+    public static byte[] Encode{{ .Method }}Notify(IFrameCodec codec, {{ .Type }} message)
+    {
+        codec ??= new PacketFrameCodec();
+        return codec.Encode(new FrameHead(MessageIds.{{ .MessageID }}), message.ToByteArray());
+    }
+{{ end -}}
+}

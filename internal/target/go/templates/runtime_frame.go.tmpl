@@ -1,9 +1,8 @@
-package frame
+package {{ .Package }}
 
 import (
+	"encoding/binary"
 	"fmt"
-
-	"gitee.com/wxdqing/go-utils/packet"
 )
 
 const packetHeaderSize = 20
@@ -23,52 +22,30 @@ type FrameCodec interface {
 type PacketFrameCodec struct{}
 
 func (PacketFrameCodec) EncodeFrame(head Head, body []byte) ([]byte, func(), error) {
-	p := packet.Writer()
-	p.WriteUint32(head.MessageID)
-	p.WriteUint32(uint32(len(body)))
-	p.WriteUint64(head.RequestID)
-	p.WriteUint32(head.PacketSeq)
-	p.WriteRawBytes(body)
-	return p.Data(), p.Return, nil
+	out := make([]byte, packetHeaderSize+len(body))
+	binary.BigEndian.PutUint32(out[0:4], head.MessageID)
+	binary.BigEndian.PutUint32(out[4:8], uint32(len(body)))
+	binary.BigEndian.PutUint64(out[8:16], head.RequestID)
+	binary.BigEndian.PutUint32(out[16:20], head.PacketSeq)
+	copy(out[20:], body)
+	return out, func() {}, nil
 }
 
 func (PacketFrameCodec) DecodeFrame(data []byte) (Head, []byte, func(), error) {
 	if len(data) < packetHeaderSize {
 		return Head{}, nil, func() {}, fmt.Errorf("%w: got %d want at least %d", ErrShortFrame, len(data), packetHeaderSize)
 	}
-	p := packet.Reader(data)
-	release := p.Return
-	messageID, err := p.ReadUint32()
-	if err != nil {
-		release()
-		return Head{}, nil, func() {}, err
-	}
-	bodyLen, err := p.ReadUint32()
-	if err != nil {
-		release()
-		return Head{}, nil, func() {}, err
-	}
-	requestID, err := p.ReadUint64()
-	if err != nil {
-		release()
-		return Head{}, nil, func() {}, err
-	}
-	packetSeq, err := p.ReadUint32()
-	if err != nil {
-		release()
-		return Head{}, nil, func() {}, err
-	}
-	body := p.RemainData()
+	bodyLen := binary.BigEndian.Uint32(data[4:8])
+	body := data[20:]
 	if uint32(len(body)) != bodyLen {
-		release()
 		return Head{}, nil, func() {}, fmt.Errorf("%w: got %d want %d", ErrBodyLenMismatch, len(body), bodyLen)
 	}
 	return Head{
-		MessageID: messageID,
+		MessageID: binary.BigEndian.Uint32(data[0:4]),
 		BodyLen:   bodyLen,
-		RequestID: requestID,
-		PacketSeq: packetSeq,
-	}, body, release, nil
+		RequestID: binary.BigEndian.Uint64(data[8:16]),
+		PacketSeq: binary.BigEndian.Uint32(data[16:20]),
+	}, body, func() {}, nil
 }
 
 var _ FrameCodec = PacketFrameCodec{}

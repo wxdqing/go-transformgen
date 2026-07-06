@@ -4,17 +4,19 @@ import (
 	{{ range .Imports -}}
 	{{ .Name }} "{{ .Path }}"
 	{{ end -}}
-	"github.com/wxdqing/go-transformgen/runtime/registry"
-	"google.golang.org/protobuf/proto"
+	{{ if eq .Refs.MessageRegistry "registry.MessageRegistry" -}}
+	registry "{{ .RuntimeImports.Registry }}"
+	{{ end -}}
+	proto "{{ .RuntimeImports.Proto }}"
 )
 
 {{ range .Messages -}}
 const {{ .ConstName }} uint32 = {{ .ID }}
 {{ end }}
 
-func RegisterMessages(reg registry.MessageRegistry) error {
+func RegisterMessages(reg {{ .Refs.MessageRegistry }}) error {
 	{{ range .Messages -}}
-	if err := reg.Register{{ .KindSuffix }}(registry.MessageMeta{ID: {{ .ConstName }}, Kind: registry.{{ .Kind }}, FullName: "{{ .FullName }}"}, func() proto.Message { return &{{ .GoType }}{} }); err != nil {
+	if err := reg.Register{{ .KindSuffix }}({{ $.Refs.MessageMeta }}{ID: {{ .ConstName }}, Kind: {{ if eq .KindSuffix "Request" }}{{ $.Refs.MessageKindRequest }}{{ else if eq .KindSuffix "Response" }}{{ $.Refs.MessageKindResponse }}{{ else }}{{ $.Refs.MessageKindNotify }}{{ end }}, FullName: "{{ .FullName }}"}, func() proto.Message { return &{{ .GoType }}{} }); err != nil {
 		return err
 	}
 	{{ end -}}

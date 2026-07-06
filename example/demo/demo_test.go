@@ -9,7 +9,6 @@ import (
 	"github.com/wxdqing/go-transformgen/example/demo/player"
 	examplepb "github.com/wxdqing/go-transformgen/example/transform"
 	protocolpb "github.com/wxdqing/go-transformgen/example/transform/protocol"
-	"github.com/wxdqing/go-transformgen/runtime/registry"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 	"google.golang.org/protobuf/proto"
@@ -63,7 +62,7 @@ func TestDemoFxGroupRegistersProtocolModules(t *testing.T) {
 	}
 }
 
-func assertRequest(t *testing.T, reg registry.HandlerRegistry, requestID uint32, req proto.Message, responseID uint32) {
+func assertRequest(t *testing.T, reg protocolpb.HandlerRegistry, requestID uint32, req proto.Message, responseID uint32) {
 	t.Helper()
 	payload, err := proto.Marshal(req)
 	if err != nil {
@@ -78,7 +77,7 @@ func assertRequest(t *testing.T, reg registry.HandlerRegistry, requestID uint32,
 	}
 }
 
-func dispatchNotify(t *testing.T, reg registry.HandlerRegistry, messageID uint32, msg proto.Message) {
+func dispatchNotify(t *testing.T, reg protocolpb.HandlerRegistry, messageID uint32, msg proto.Message) {
 	t.Helper()
 	payload, err := proto.Marshal(msg)
 	if err != nil {

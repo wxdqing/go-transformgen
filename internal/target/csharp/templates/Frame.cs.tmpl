@@ -1,0 +1,77 @@
+namespace {{ .Namespace }};
+
+using System;
+using System.Buffers.Binary;
+
+public readonly struct FrameHead
+{
+    public readonly uint MessageId;
+    public readonly uint BodyLen;
+    public readonly ulong RequestId;
+    public readonly uint PacketSeq;
+
+    public FrameHead(uint messageId, uint bodyLen = 0, ulong requestId = 0, uint packetSeq = 0)
+    {
+        MessageId = messageId;
+        BodyLen = bodyLen;
+        RequestId = requestId;
+        PacketSeq = packetSeq;
+    }
+}
+
+public readonly struct DecodedFrame
+{
+    public readonly FrameHead Head;
+    public readonly byte[] Body;
+
+    public DecodedFrame(FrameHead head, byte[] body)
+    {
+        Head = head;
+        Body = body;
+    }
+}
+
+public interface IFrameCodec
+{
+    byte[] Encode(FrameHead head, byte[] body);
+    DecodedFrame Decode(byte[] data);
+}
+
+public sealed class PacketFrameCodec : IFrameCodec
+{
+    private const int HeaderSize = 20;
+
+    public byte[] Encode(FrameHead head, byte[] body)
+    {
+        body ??= Array.Empty<byte>();
+        var data = new byte[HeaderSize + body.Length];
+        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(0, 4), head.MessageId);
+        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(4, 4), (uint)body.Length);
+        BinaryPrimitives.WriteUInt64BigEndian(data.AsSpan(8, 8), head.RequestId);
+        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(16, 4), head.PacketSeq);
+        body.CopyTo(data.AsSpan(HeaderSize));
+        return data;
+    }
+
+    public DecodedFrame Decode(byte[] data)
+    {
+        if (data == null || data.Length < HeaderSize)
+        {
+            throw new InvalidOperationException("short frame");
+        }
+
+        var bodyLen = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(4, 4));
+        var body = data.AsSpan(HeaderSize).ToArray();
+        if (body.Length != bodyLen)
+        {
+            throw new InvalidOperationException("body length mismatch");
+        }
+
+        var head = new FrameHead(
+            BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(0, 4)),
+            bodyLen,
+            BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(8, 8)),
+            BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(16, 4)));
+        return new DecodedFrame(head, body);
+    }
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/wxdqing/go-transformgen/internal/define"
 	"github.com/wxdqing/go-transformgen/internal/descriptor"
 	"github.com/wxdqing/go-transformgen/internal/model"
+	csharptarget "github.com/wxdqing/go-transformgen/internal/target/csharp"
 	gotarget "github.com/wxdqing/go-transformgen/internal/target/go"
 )
 
@@ -52,7 +53,7 @@ func run(args []string) error {
 	var side string
 	var outDir string
 	var packageName string
-	var templateDir string
+	var runtimeMode string
 	goImports := importMap{}
 
 	fs := flag.NewFlagSet("transformgen", flag.ContinueOnError)
@@ -62,19 +63,14 @@ func run(args []string) error {
 	fs.StringVar(&side, "side", "requester,responder", "generated side")
 	fs.StringVar(&outDir, "out", "", "output directory")
 	fs.StringVar(&packageName, "package", "", "output package or namespace")
-	fs.StringVar(&templateDir, "template-dir", "", "custom template directory")
+	fs.StringVar(&runtimeMode, "runtime", "emit", "runtime mode: emit or import")
 	fs.Var(goImports, "go-import", "Go import override key=value")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	_ = templateDir
 	if protoSet == "" || definesDir == "" || outDir == "" || packageName == "" {
 		return errMissingArgument
 	}
-	if target != "go" {
-		return fmt.Errorf("unsupported target %q", target)
-	}
-
 	desc, err := descriptor.Load(protoSet)
 	if err != nil {
 		return err
@@ -87,10 +83,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	files, err := gotarget.Render(built, gotarget.Options{
-		Package: packageName,
-		Sides:   splitCSV(side),
-	})
+	files, err := renderTarget(target, built, packageName, splitCSV(side), runtimeMode, goImports)
 	if err != nil {
 		return err
 	}
@@ -104,6 +97,66 @@ func run(args []string) error {
 		}
 	}
 	return nil
+}
+
+type outputFile struct {
+	Path    string
+	Content []byte
+}
+
+func renderTarget(target string, built *model.Model, packageName string, sides []string, runtimeMode string, goImports importMap) ([]outputFile, error) {
+	switch target {
+	case "go":
+		files, err := gotarget.Render(built, gotarget.Options{
+			Package: packageName,
+			Sides:   sides,
+			Imports: goImportPaths(goImports),
+			Runtime: gotarget.RuntimeMode(runtimeMode),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return goOutputFiles(files), nil
+	case "csharp":
+		files, err := csharptarget.Render(built, csharptarget.Options{
+			Namespace: packageName,
+			Sides:     sides,
+			Runtime:   csharptarget.RuntimeMode(runtimeMode),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return csharpOutputFiles(files), nil
+	default:
+		return nil, fmt.Errorf("unsupported target %q", target)
+	}
+}
+
+func goOutputFiles(files []gotarget.File) []outputFile {
+	out := make([]outputFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, outputFile{Path: file.Path, Content: file.Content})
+	}
+	return out
+}
+
+func csharpOutputFiles(files []csharptarget.File) []outputFile {
+	out := make([]outputFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, outputFile{Path: file.Path, Content: file.Content})
+	}
+	return out
+}
+
+func goImportPaths(values importMap) gotarget.ImportPaths {
+	return gotarget.ImportPaths{
+		Frame:     values["frame"],
+		Registry:  values["registry"],
+		Proto:     values["proto"],
+		Context:   values["context"],
+		FX:        values["fx"],
+		Bootstrap: values["bootstrap"],
+	}
 }
 
 func splitCSV(value string) []string {

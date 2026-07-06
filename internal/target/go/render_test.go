@@ -51,7 +51,15 @@ func TestRenderProducesGoRegistrationFile(t *testing.T) {
 		}},
 	}}}
 
-	files, err := Render(m, Options{Package: "protocolpb", Sides: []string{"responder"}})
+	files, err := Render(m, Options{
+		Package: "protocolpb",
+		Sides:   []string{"requester", "responder"},
+		Runtime: RuntimeModeImport,
+		Imports: ImportPaths{
+			Frame:    "example.com/runtime/frame",
+			Registry: "example.com/runtime/registry",
+		},
+	})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -126,7 +134,7 @@ func TestRenderProducesGoRegistrationFile(t *testing.T) {
 		"BattleFinished(ctx grainactor.Context, msg *transformpb.BattleFinishedNotify) error",
 		"func registerPlayerHandlers",
 		"EncodeHeartbeatRequest",
-		"PackMessage(codec, frame.Head{MessageID: MessageIDHeartbeatRequest, RequestID: requestID}, req)",
+		"codec.EncodeFrame(frame.Head{MessageID: MessageIDHeartbeatRequest, RequestID: requestID}, body)",
 		"DecodeHeartbeatResponse",
 		"EncodeBattleFinishedNotify",
 	} {
@@ -168,4 +176,168 @@ func TestGoTemplateFileContainsRequesterAndNotifySections(t *testing.T) {
 			t.Fatalf("template missing %q", want)
 		}
 	}
+}
+
+func TestRenderHonorsSideSelection(t *testing.T) {
+	m := testModel()
+
+	requesterFiles, err := Render(m, Options{Package: "protocolpb", Sides: []string{"requester"}})
+	if err != nil {
+		t.Fatalf("Render(requester) error = %v", err)
+	}
+	requesterModule := string(filesByPath(requesterFiles)["player.go"].Content)
+	if !strings.Contains(requesterModule, "func EncodeHeartbeatRequest") {
+		t.Fatalf("requester module missing EncodeHeartbeatRequest:\n%s", requesterModule)
+	}
+	if strings.Contains(requesterModule, "type Player interface") || strings.Contains(requesterModule, "func registerPlayerHandlers") {
+		t.Fatalf("requester module contains responder code:\n%s", requesterModule)
+	}
+	if _, ok := filesByPath(requesterFiles)["protocol.go"]; ok {
+		t.Fatalf("requester output should not include protocol.go: %+v", requesterFiles)
+	}
+
+	responderFiles, err := Render(m, Options{Package: "protocolpb", Sides: []string{"responder"}})
+	if err != nil {
+		t.Fatalf("Render(responder) error = %v", err)
+	}
+	responderModule := string(filesByPath(responderFiles)["player.go"].Content)
+	if !strings.Contains(responderModule, "type Player interface") || !strings.Contains(responderModule, "func registerPlayerHandlers") {
+		t.Fatalf("responder module missing responder code:\n%s", responderModule)
+	}
+	if strings.Contains(responderModule, "func EncodeHeartbeatRequest") || strings.Contains(responderModule, "func DecodeHeartbeatResponse") {
+		t.Fatalf("responder module contains requester code:\n%s", responderModule)
+	}
+	if _, ok := filesByPath(responderFiles)["protocol.go"]; !ok {
+		t.Fatalf("responder output should include protocol.go: %+v", responderFiles)
+	}
+}
+
+func TestRenderRejectsInvalidSide(t *testing.T) {
+	_, err := Render(testModel(), Options{Package: "protocolpb", Sides: []string{"mobile"}})
+	if err == nil {
+		t.Fatal("Render() error = nil, want invalid side error")
+	}
+}
+
+func TestRenderRejectsInvalidRuntimeMode(t *testing.T) {
+	_, err := Render(testModel(), Options{Package: "protocolpb", Sides: []string{"requester"}, Runtime: RuntimeMode("copy")})
+	if err == nil {
+		t.Fatal("Render() error = nil, want invalid runtime mode error")
+	}
+}
+
+func TestRenderImportRuntimeRequiresExternalRuntimeImports(t *testing.T) {
+	_, err := Render(testModel(), Options{Package: "protocolpb", Sides: []string{"requester"}, Runtime: RuntimeModeImport})
+	if err == nil {
+		t.Fatal("Render() error = nil, want missing runtime imports error")
+	}
+}
+
+func TestRenderUsesGoImportOverrides(t *testing.T) {
+	files, err := Render(testModel(), Options{
+		Package: "protocolpb",
+		Sides:   []string{"requester", "responder"},
+		Runtime: RuntimeModeImport,
+		Imports: ImportPaths{
+			Frame:     "example.com/runtime/frame",
+			Registry:  "example.com/runtime/registry",
+			Proto:     "example.com/protobuf/proto",
+			Context:   "example.com/context",
+			FX:        "example.com/fx",
+			Bootstrap: "example.com/bootstrap",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	protocol := string(filesByPath(files)["protocol.go"].Content)
+	module := string(filesByPath(files)["player.go"].Content)
+	messages := string(filesByPath(files)["protocol_messages.go"].Content)
+	all := protocol + module + messages
+	for _, want := range []string{
+		`"example.com/runtime/frame"`,
+		`"example.com/runtime/registry"`,
+		`"example.com/protobuf/proto"`,
+	} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("generated files missing import %q:\n%s\n%s\n%s", want, protocol, module, messages)
+		}
+	}
+	if !strings.Contains(protocol, `bootstrap "example.com/bootstrap"`) || !strings.Contains(protocol, `"example.com/fx"`) || !strings.Contains(protocol, `"example.com/context"`) {
+		t.Fatalf("protocol missing overridden framework imports:\n%s", protocol)
+	}
+	if strings.Contains(protocol+module+messages, "github.com/wxdqing/go-transformgen/runtime") {
+		t.Fatalf("generated files still contain default transformgen runtime import")
+	}
+}
+
+func TestRenderCanEmitRuntimeSupport(t *testing.T) {
+	files, err := Render(testModel(), Options{Package: "protocolpb", Sides: []string{"requester", "responder"}, Runtime: RuntimeModeEmit})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	byPath := filesByPath(files)
+	for _, path := range []string{"runtime_frame.go", "runtime_registry.go"} {
+		if string(byPath[path].Content) == "" {
+			t.Fatalf("missing emitted runtime file %s: %+v", path, files)
+		}
+	}
+	all := string(byPath["protocol.go"].Content) + string(byPath["protocol_messages.go"].Content) + string(byPath["player.go"].Content)
+	if strings.Contains(all, "github.com/wxdqing/go-transformgen/runtime") {
+		t.Fatalf("runtime emit output should not import transformgen runtime:\n%s", all)
+	}
+	if !strings.Contains(string(byPath["runtime_frame.go"].Content), "type FrameCodec interface") {
+		t.Fatalf("runtime_frame.go missing FrameCodec:\n%s", byPath["runtime_frame.go"].Content)
+	}
+	if !strings.Contains(string(byPath["runtime_registry.go"].Content), "type Registry interface") {
+		t.Fatalf("runtime_registry.go missing Registry:\n%s", byPath["runtime_registry.go"].Content)
+	}
+	if strings.Contains(string(byPath["runtime_registry.go"].Content), "type DefaultRegistry struct") {
+		t.Fatalf("runtime_registry.go should not export the concrete registry type:\n%s", byPath["runtime_registry.go"].Content)
+	}
+	if !strings.Contains(string(byPath["runtime_registry.go"].Content), "func NewRegistry() Registry") {
+		t.Fatalf("runtime_registry.go should expose NewRegistry through the Registry interface:\n%s", byPath["runtime_registry.go"].Content)
+	}
+}
+
+func testModel() *model.Model {
+	return &model.Model{Modules: []model.Module{{
+		Name:          "player",
+		ConstName:     "ModelNamePlayer",
+		InterfaceName: "Player",
+		RPCs: []model.RPC{{
+			Method:        "Heartbeat",
+			Ctx:           "context.Context",
+			CtxImportPath: "context",
+			Request: descriptor.Message{
+				ID:            1001,
+				Kind:          descriptor.MessageKindRequest,
+				FullName:      "transform.HeartbeatRequest",
+				GoImportPath:  "github.com/wxdqing/go-transformgen/example/transform",
+				GoPackageName: "transformpb",
+				GoTypeName:    "HeartbeatRequest",
+			},
+			Response: descriptor.Message{
+				ID:            1002,
+				Kind:          descriptor.MessageKindResponse,
+				FullName:      "transform.HeartbeatResponse",
+				GoImportPath:  "github.com/wxdqing/go-transformgen/example/transform",
+				GoPackageName: "transformpb",
+				GoTypeName:    "HeartbeatResponse",
+			},
+		}},
+		Notifies: []model.Notify{{
+			Method:        "BattleFinished",
+			Ctx:           "context.Context",
+			CtxImportPath: "context",
+			Message: descriptor.Message{
+				ID:            2001,
+				Kind:          descriptor.MessageKindNotify,
+				FullName:      "transform.BattleFinishedNotify",
+				GoImportPath:  "github.com/wxdqing/go-transformgen/example/transform",
+				GoPackageName: "transformpb",
+				GoTypeName:    "BattleFinishedNotify",
+			},
+		}},
+	}}}
 }

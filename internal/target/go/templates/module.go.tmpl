@@ -4,13 +4,18 @@ import (
 	{{ range .Imports -}}
 	{{ if .Name }}{{ .Name }} {{ end }}"{{ .Path }}"
 	{{ end -}}
-	"github.com/wxdqing/go-transformgen/runtime/frame"
-	"github.com/wxdqing/go-transformgen/runtime/registry"
-	"google.golang.org/protobuf/proto"
+	{{ if and .HasRequester (eq .Refs.FrameCodec "frame.FrameCodec") -}}
+	frame "{{ .RuntimeImports.Frame }}"
+	{{ end -}}
+	{{ if and (or .HasRequester .HasResponder) (eq .Refs.HandlerRegistry "registry.HandlerRegistry") -}}
+	registry "{{ .RuntimeImports.Registry }}"
+	{{ end -}}
+	proto "{{ .RuntimeImports.Proto }}"
 )
 
 const {{ .ConstName }} = "{{ .Name }}"
 
+{{ if .HasResponder -}}
 type {{ .InterfaceName }} interface {
 	{{ range .RPCs -}}
 	{{ .Method }}(ctx {{ .Ctx }}, req *{{ .RequestType }}) (*{{ .ResponseType }}, error)
@@ -20,16 +25,16 @@ type {{ .InterfaceName }} interface {
 	{{ end -}}
 }
 
-func register{{ .InterfaceName }}Handlers(reg registry.HandlerRegistry, impl {{ .InterfaceName }}) error {
+func register{{ .InterfaceName }}Handlers(reg {{ .Refs.HandlerRegistry }}, impl {{ .InterfaceName }}) error {
 	{{ range .RPCs -}}
 	if err := reg.RegisterRequestHandler({{ .ModelConst }}, {{ .RequestConst }}, {{ .ResponseConst }}, func(ctx any, req proto.Message) (proto.Message, error) {
 		typedCtx, ok := ctx.({{ .Ctx }})
 		if !ok {
-			return nil, registry.ErrInvalidContextType
+			return nil, {{ $.Refs.ErrInvalidContextType }}
 		}
 		typedReq, ok := req.(*{{ .RequestType }})
 		if !ok {
-			return nil, registry.ErrInvalidMessageType
+			return nil, {{ $.Refs.ErrInvalidMessageType }}
 		}
 		return impl.{{ .Method }}(typedCtx, typedReq)
 	}); err != nil {
@@ -40,11 +45,11 @@ func register{{ .InterfaceName }}Handlers(reg registry.HandlerRegistry, impl {{ 
 	if err := reg.RegisterNotifyHandler({{ .ModelConst }}, {{ .MessageConst }}, func(ctx any, msg proto.Message) error {
 		typedCtx, ok := ctx.({{ .Ctx }})
 		if !ok {
-			return registry.ErrInvalidContextType
+			return {{ $.Refs.ErrInvalidContextType }}
 		}
 		typedMsg, ok := msg.(*{{ .MessageType }})
 		if !ok {
-			return registry.ErrInvalidMessageType
+			return {{ $.Refs.ErrInvalidMessageType }}
 		}
 		return impl.{{ .Method }}(typedCtx, typedMsg)
 	}); err != nil {
@@ -53,15 +58,24 @@ func register{{ .InterfaceName }}Handlers(reg registry.HandlerRegistry, impl {{ 
 	{{ end -}}
 	return nil
 }
+{{ end -}}
 
+{{ if .HasRequester -}}
 {{ range .RPCs -}}
-func Encode{{ .Method }}Request(codec frame.FrameCodec, requestID uint64, req *{{ .RequestType }}) ([]byte, func(), error) {
-	return PackMessage(codec, frame.Head{MessageID: {{ .RequestConst }}, RequestID: requestID}, req)
+func Encode{{ .Method }}Request(codec {{ $.Refs.FrameCodec }}, requestID uint64, req *{{ .RequestType }}) ([]byte, func(), error) {
+	if codec == nil {
+		codec = {{ $.Refs.PacketFrameCodec }}{}
+	}
+	body, err := proto.Marshal(req)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return codec.EncodeFrame({{ $.Refs.Head }}{MessageID: {{ .RequestConst }}, RequestID: requestID}, body)
 }
 
 func Decode{{ .Method }}Response(messageID uint32, payload []byte) (*{{ .ResponseType }}, error) {
 	if messageID != {{ .ResponseConst }} {
-		return nil, registry.ErrMessageKindMismatch
+		return nil, {{ $.Refs.ErrMessageKindMismatch }}
 	}
 	var resp {{ .ResponseType }}
 	if err := proto.Unmarshal(payload, &resp); err != nil {
@@ -72,7 +86,15 @@ func Decode{{ .Method }}Response(messageID uint32, payload []byte) (*{{ .Respons
 {{ end -}}
 
 {{ range .Notifies -}}
-func Encode{{ .Method }}Notify(codec frame.FrameCodec, msg *{{ .MessageType }}) ([]byte, func(), error) {
-	return PackMessage(codec, frame.Head{MessageID: {{ .MessageConst }}}, msg)
+func Encode{{ .Method }}Notify(codec {{ $.Refs.FrameCodec }}, msg *{{ .MessageType }}) ([]byte, func(), error) {
+	if codec == nil {
+		codec = {{ $.Refs.PacketFrameCodec }}{}
+	}
+	body, err := proto.Marshal(msg)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return codec.EncodeFrame({{ $.Refs.Head }}{MessageID: {{ .MessageConst }}}, body)
 }
+{{ end -}}
 {{ end -}}

@@ -35,20 +35,19 @@ tools/source/transformgen
 - 提供 `transformgen` CLI。
 - 提供 descriptor/YAML 解析与中间模型。
 - 提供多语言模板渲染框架。
-- 提供 Go runtime registry、frame codec 抽象与默认 packet codec。
+- 通过 target 模板生成 runtime support，生成产物可自包含运行。
 - 提供 proto option 定义，供业务 proto import。
 
-项目生成代码只依赖该 module 的公开 runtime/options 包，不依赖 `internal/*`，也不复制一份运行时实现。
+项目生成代码默认只依赖业务 proto 生成代码和目标语言基础依赖，不依赖 `transformgen/runtime`。Go target 如需复用外部 runtime，可显式使用 `--runtime import` 并通过 `--go-import frame=...`、`--go-import registry=...` 指定外部包。
 
 ## Module 边界
 
-独立 module 对外暴露三类稳定入口：
+独立 module 对外暴露两类稳定入口：
 
 - `cmd/transformgen`：代码生成 CLI。
-- `runtime/*`：生成代码和业务工程运行时依赖。
 - `proto/options`：message option 定义。
 
-`internal/*` 只服务 CLI 和模板渲染，不被生成代码 import。
+`internal/*` 只服务 CLI 和模板渲染，不被生成代码 import。runtime 支持代码由 `internal/target/<lang>/templates` 产出到业务工程。
 
 业务工程的典型依赖关系：
 
@@ -57,8 +56,7 @@ resource/protocol/transform/*.proto
   -> import github.com/wxdqing/go-transformgen/proto/options/transform.proto
 
 resource/protocol/src/transform/*.go
-  -> import github.com/wxdqing/go-transformgen/runtime/registry
-  -> import github.com/wxdqing/go-transformgen/runtime/frame
+  -> contains generated frame/registry runtime support
 ```
 
 如果本工程暂时使用本地源码，可以在 `go.work` 或业务 `go.mod` 中使用 replace：
@@ -288,7 +286,7 @@ Go target 还会生成 `protocol.go` 作为统一入口：
 - `Provider`：实现 `gitee.com/wxdqing/fx-bootstrap.Provider`，用于收集 fx group 中的模块实现、构造 `*Module`，并在 `OnStart` 中完成内部注册。
 - `HandlerModule` / `HandlerModuleOut` / `HandlerModuleWithBean`：业务模块进入 fx group 的轻量包装。
 
-`NewProtocol(nil)` 默认使用 `runtime/frame.PacketFrameCodec`。该 codec 内部具体依赖 `gitee.com/wxdqing/go-utils/packet` 完成 packet writer/reader 和 pool release。生成协议入口不依赖 game peer/session；peer、gateway、battle RPC 等传输层只负责发送/接收 bytes。
+`NewProtocol(nil)` 默认使用生成包内的 `PacketFrameCodec`。该 codec 由 target runtime 模板生成，生成协议入口不依赖 game peer/session；peer、gateway、battle RPC 等传输层只负责发送/接收 bytes。
 
 ### 端类型产物
 
@@ -330,32 +328,26 @@ request 端和 response 端可以生成不同语言。例如：
 tools/source/transformgen
   go.mod
   cmd/transformgen
-  runtime
-  runtime/frame
-  runtime/registry
   internal/config
   internal/descriptor
   internal/define
   internal/model
   internal/render
   internal/target/go
-  internal/target/typescript
-  templates/go
-  templates/typescript
+  internal/target/go/templates
+  internal/target/csharp
+  internal/target/csharp/templates
   docs
 ```
 
 职责：
 
-- `runtime`：对外稳定 API，供生成代码与业务工程引用。
-- `runtime/frame`：frame codec 抽象、默认 Go packet codec。
-- `runtime/registry`：message 与 handler 注册表。
 - `descriptor`：读取 proto descriptor，提取 message option、Go 包信息、message 全名。
 - `define`：读取 YAML，校验模块、RPC、notify 定义。
 - `model`：构建语言无关的中间模型。
 - `render`：封装模板渲染。
 - `target/<lang>`：负责不同语言的命名、import、文件布局。
-- `templates/<lang>`：保存对应语言模板。
+- `target/<lang>/templates`：保存对应语言模板和 runtime support 模板。
 
 第一阶段只实现 Go target 与 Go runtime；目录先按多语言留出边界，但不提前实现其他语言逻辑。
 
@@ -391,27 +383,29 @@ templates/go/frame_codec.go.tmpl
 ```text
 --proto-set <path>            protoc descriptor set 文件
 --defines-dir <path>          YAML 定义目录
---target go                   目标语言
+--target go|csharp            目标语言
 --side requester,responder    生成端类型
+--runtime emit|import         runtime 处理方式，Go 默认 emit，C# 仅支持 emit
 --out <dir>                   输出目录
 --package <name>              输出包名或 namespace
---template-dir <dir>          可选，自定义模板目录
---go-import runtime=<import>  Go runtime import 映射
+--go-import frame=<import>    Go frame runtime import 映射
 --go-import registry=<import> Go registry import 映射
---go-import packet=<import>   Go import 映射
 --go-import proto=<import>    Go import 映射
 --go-import context=<import>  Go import 映射
+--go-import fx=<import>       Go fx import 映射
+--go-import bootstrap=<import> Go fx-bootstrap import 映射
 ```
 
 Go target 默认 import：
 
 ```text
-runtime=github.com/wxdqing/go-transformgen/runtime
-registry=github.com/wxdqing/go-transformgen/runtime/registry
-packet=gitee.com/wxdqing/go-utils/packet
 proto=google.golang.org/protobuf/proto
 context=context
+fx=go.uber.org/fx
+bootstrap=gitee.com/wxdqing/fx-bootstrap
 ```
+
+`--runtime emit` 会把 Go runtime support 写入产出目录，生成代码不 import transformgen 自身的 runtime 包。`--runtime import` 只用于接入方已有外部 runtime 包的情况，必须显式提供 `frame` 与 `registry` import。C# target 使用 `csharp_namespace` 和 proto message 名生成类型引用，默认产出 `Frame.cs`、`ProtocolRuntime.cs`、`ProtocolMessages.cs` 以及按模块拆分的 requester/responder 文件。
 
 如果某个工程使用不同包路径，可以通过参数覆盖。
 
@@ -426,9 +420,9 @@ context=context
 - `HEAD` 字段布局可能随链路变化。
 - transformgen 只应关心 message_id 与 protobuf payload 的关系。
 
-生成代码只依赖抽象的 frame codec。该抽象由 `github.com/wxdqing/go-transformgen/runtime/frame` 提供。
+生成代码只依赖抽象的 frame codec。默认情况下该抽象由生成包内的 runtime support 提供。
 
-runtime/frame 提供：
+Go runtime support 提供：
 
 ```go
 type Head struct {
@@ -489,16 +483,10 @@ func DispatchRequest(ctx any, codec FrameCodec, head Head, payload []byte) ([]by
 
 接入层收到返回值后决定如何发送。这样 response 端可以嵌入 gateway stream、actor session、battle RPC 连接等不同传输，不需要生成器了解具体网络。
 
-runtime/frame 可以提供一个默认实现：
+Go runtime support 会提供一个默认实现：
 
 ```go
 type PacketFrameCodec struct{}
-```
-
-默认实现使用：
-
-```go
-gitee.com/wxdqing/go-utils/packet
 ```
 
 编码规则由该实现决定，例如：
@@ -512,43 +500,6 @@ body       []byte
 ```
 
 该默认实现只作为 Go 侧便利能力。其他链路可以注入自己的 `FrameCodec`，例如复用 `peer/codec/msgcodec` 的 HEAD 布局。
-
-## Go packet/pool 使用
-
-Go 默认 frame codec 使用 `go-utils/packet` 的池化能力：
-
-```go
-p := packet.Writer()
-
-p.WriteUint32(head.MessageID)
-p.WriteUint32(uint32(len(body)))
-p.WriteUint64(head.RequestID)
-p.WriteUint32(head.PacketSeq)
-p.WriteRawBytes(body)
-
-return p.Data(), p.Return, nil
-```
-
-读取：
-
-```go
-p := packet.Reader(data)
-
-messageID, err := p.ReadUint32()
-bodyLen, err := p.ReadUint32()
-requestID, err := p.ReadUint64()
-packetSeq, err := p.ReadUint32()
-body := p.RemainData()
-
-return head, body, p.Return, nil
-```
-
-注意：
-
-- `packet.Reader(data)` 当前会复制输入数据；如果热路径需要零拷贝，后续再扩展 go-utils，而不是在生成代码里绕开它。
-- `EncodeFrame` 返回给调用方的字节必须在 release 前完成发送或复制。
-- `DecodeFrame` 返回的 body 在 release 前有效；调用方需要长期保存时必须复制。
-- 第一阶段优先保证接口清晰和正确性，不为了理论性能增加复杂 buffer 生命周期。
 
 ## 模块名常量
 
@@ -575,7 +526,7 @@ const MessageIDBattleFinishedNotify uint32 = 3001
 
 ## Runtime 注册表
 
-`github.com/wxdqing/go-transformgen/runtime/registry` 提供外部注册能力。
+生成包内的 runtime support 提供外部注册能力。
 
 注册表分两类信息：
 
@@ -992,8 +943,8 @@ runtime registry 第一版需要提供清晰错误，便于接入层判断问题
 
 1. 建立独立 module 骨架：`github.com/wxdqing/go-transformgen`。
 2. 添加 proto option 定义与生成方式。
-3. 实现 runtime registry：message 注册、解析、handler 注册、dispatch。
-4. 实现 runtime/frame：`Head`、`FrameCodec`、`PacketFrameCodec`。
+3. 实现 Go runtime support 模板：message 注册、解析、handler 注册、dispatch。
+4. 实现 Go frame support 模板：`Head`、`FrameCodec`、`PacketFrameCodec`。
 5. 实现 descriptor set 读取，提取 message_id、kind、Go 类型信息。
 6. 实现 YAML 读取与校验。
 7. 构建语言无关中间模型。

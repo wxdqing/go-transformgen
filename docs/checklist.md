@@ -9,11 +9,11 @@
 ## Module Setup
 
 - [x] Create `tools/source/transformgen/go.mod`.
-- [x] Add public package skeletons for `runtime/registry` and `runtime/frame`.
+- [x] Add generated runtime support templates for registry and frame code.
 - [x] Add internal package skeletons for `define`, `descriptor`, `model`, `render`, and `target/go`.
 - [x] Add `cmd/transformgen` entrypoint.
 
-## Runtime Registry
+## Generated Runtime Registry
 
 - [x] Write failing tests for message registration and parsing.
 - [x] Implement message registration and parsing.
@@ -22,7 +22,7 @@
 - [x] Write failing tests for request and notify handler dispatch.
 - [x] Implement handler registration and dispatch.
 
-## Runtime Frame
+## Generated Runtime Frame
 
 - [x] Write failing tests for `PacketFrameCodec` encode/decode round trip.
 - [x] Implement `Head`, `FrameCodec`, and `PacketFrameCodec`.

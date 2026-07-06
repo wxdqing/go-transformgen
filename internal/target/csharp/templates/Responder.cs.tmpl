@@ -1,0 +1,46 @@
+namespace {{ .Namespace }};
+
+using System;
+using Google.Protobuf;
+
+public interface I{{ .ClassName }}Handler
+{
+{{ range .RPCs -}}
+    {{ .ResponseType }} {{ .Method }}(object ctx, {{ .RequestType }} request);
+{{ end -}}
+{{ range .Notifies -}}
+    void {{ .Method }}(object ctx, {{ .Type }} message);
+{{ end -}}
+}
+
+public static class {{ .ClassName }}Responder
+{
+    public static IMessage DispatchRequest(I{{ .ClassName }}Handler handler, object ctx, uint messageId, byte[] payload, out uint responseMessageId)
+    {
+        switch (messageId)
+        {
+{{ range .RPCs -}}
+            case MessageIds.{{ .RequestID }}:
+                responseMessageId = MessageIds.{{ .ResponseID }};
+                return handler.{{ .Method }}(ctx, {{ .RequestType }}.Parser.ParseFrom(payload));
+{{ end -}}
+            default:
+                responseMessageId = 0;
+                throw new InvalidOperationException("handler not found");
+        }
+    }
+
+    public static void DispatchNotify(I{{ .ClassName }}Handler handler, object ctx, uint messageId, byte[] payload)
+    {
+        switch (messageId)
+        {
+{{ range .Notifies -}}
+            case MessageIds.{{ .MessageID }}:
+                handler.{{ .Method }}(ctx, {{ .Type }}.Parser.ParseFrom(payload));
+                return;
+{{ end -}}
+            default:
+                throw new InvalidOperationException("handler not found");
+        }
+    }
+}
