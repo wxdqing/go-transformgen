@@ -91,87 +91,64 @@ method 层由 YAML 定义，负责：
 
 YAML 不再定义消息编号。
 
-## Proto message 编号
+## Proto 源（一份）
 
-新增通用 proto option，由 `go-transformgen` 独立仓库维护，建议放在：
-
-```text
-github.com/wxdqing/go-transformgen/proto/options/transform.proto
-```
-
-示例：
-
-```proto
-syntax = "proto3";
-
-package transformgen.options;
-
-import "google/protobuf/descriptor.proto";
-
-option go_package = "github.com/wxdqing/go-transformgen/proto/options;options";
-
-enum MessageKind {
-  MESSAGE_KIND_UNSPECIFIED = 0;
-  MESSAGE_KIND_REQUEST = 1;
-  MESSAGE_KIND_RESPONSE = 2;
-  MESSAGE_KIND_NOTIFY = 3;
-}
-
-extend google.protobuf.MessageOptions {
-  uint32 message_id = 51001;
-  MessageKind message_kind = 51002;
-}
-
-extend google.protobuf.FileOptions {
-  uint32 message_id_min = 51003;
-  uint32 message_id_max = 51004;
-}
-```
-
-业务 proto 使用时 import 该 option 文件：
-
-```proto
-import "github.com/wxdqing/go-transformgen/proto/options/transform.proto";
-```
+业务只维护一份标准 `proto3` 文件。不在 proto 上声明 `message_id` / `message_kind` option。
 
 业务 message 示例：
 
 ```proto
-option (transformgen.options.message_id_min) = 1000;
-option (transformgen.options.message_id_max) = 1999;
+syntax = "proto3";
+
+package transform.example;
+
+option go_package = "github.com/wxdqing/go-transformgen/example/transform;examplepb";
 
 message HeartbeatRequest {
-  option (transformgen.options.message_id) = 1001;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_REQUEST;
-
   int64 client_time = 1;
   uint64 sequence = 2;
 }
 
 message HeartbeatResponse {
-  option (transformgen.options.message_id) = 1002;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_RESPONSE;
-
   int64 server_time = 1;
   int64 client_time = 2;
   uint64 sequence = 3;
 }
 
 message BattleFinishedNotify {
-  option (transformgen.options.message_id) = 3001;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_NOTIFY;
-
   uint64 battle_id = 1;
 }
 ```
 
-规则：
+`request` / `response` / `notify` 角色由 YAML 定义；消息名需能自描述角色，支持：
 
-- request 和 response 使用不同的 message_id。
-- notify 使用自己的 message_id。
-- message_id 全局唯一。
-- 如果 proto 文件配置了 `message_id_min` 与 `message_id_max`，该文件内所有带 `message_id` 的 message 必须落在闭区间内。
-- message_id 不应与 peer 底层保留消息冲突。
+- 后缀风格：`*Request` / `*Response` / `*Notify`
+- TianLong 中缀风格：`MsgXxxReqYyy` / `MsgXxxResYyy` / `MsgXxxNtfYyy`
+
+YAML 角色与命名推断冲突时生成失败。
+
+## 消息 ID 生成（确定性哈希 + 锁定表）
+
+运行时 message id 由 transformgen 分配，transformgen 是唯一权威来源；Go 与 C# 共用同一套最终 id。
+
+首次（或未入表）消息按固定算法计算：
+
+```text
+id = |netHash(name) % 90000000| + band
+band = 200000000  # request（client -> server）
+band = 100000000  # response / notify（server -> client）
+```
+
+`netHash` 复刻 .NET Framework 的确定性 `String.GetHashCode`（双累加器 + `1566083941`，UTF-16 code unit，int32 溢出回绕）。方向由 YAML 角色决定：request 走 server 段，response/notify 走 client 段。与当前仍占用的 id 冲突时按升序探测 +1。
+
+跨版本稳定性靠 `--msgid-lock` 指向的 YAML 锁定表（如 `msgid.lock.yaml`）：
+
+- 表中已有短名 → 原样复用 id，不重算。
+- 新消息 → 按上式分配，并避开表内仍占用的 id。
+- 消息删除 → 从表中移除对应行，该 id 可被后续新消息复用。
+- 每次生成后回写锁定表，使之与当前 message 全集同步。
+
+锁定表应与协议源一并提交。
 
 ## Descriptor 输入
 
@@ -192,11 +169,9 @@ protoc \
 descriptor set 中需要包含：
 
 - 所有业务 message。
-- `go-transformgen` 的 option proto。
-- `go_package` option。
-- message option 扩展字段。
+- `go_package`（以及可选的 `csharp_namespace`）。
 
-生成器通过 descriptor set 读取 message_id、kind、proto full name、Go import path、Go type name。这样 CLI 不需要依赖业务源码目录结构，也方便后续支持其他语言 target。
+生成器通过 descriptor set 读取 proto full name、Go/C# 类型信息，并由消息名推断 kind；运行时 id 在 model 构建时按哈希分配。
 
 ## YAML 定义
 
@@ -405,7 +380,16 @@ fx=go.uber.org/fx
 bootstrap=gitee.com/wxdqing/fx-bootstrap
 ```
 
-`--runtime emit` 会把 Go runtime support 写入产出目录，生成代码不 import transformgen 自身的 runtime 包。`--runtime import` 只用于接入方已有外部 runtime 包的情况，必须显式提供 `frame` 与 `registry` import。C# target 使用 `csharp_namespace` 和 proto message 名生成类型引用，默认产出 `Frame.cs`、`ProtocolRuntime.cs`、`ProtocolMessages.cs` 以及按模块拆分的 requester/responder 文件。
+`--runtime emit` 会把 Go runtime support 写入产出目录，生成代码不 import transformgen 自身的 runtime 包。`--runtime import` 只用于接入方已有外部 runtime 包的情况，必须显式提供 `frame` 与 `registry` import。
+
+C# target 对齐 TianLong3 客户端约定，默认（`--runtime emit`）产出：
+
+- 按 proto 源文件拆分的 protobuf-net message/enum 类（`[ProtoContract]` / `[ProtoMember]` / `IExtensible`，repeated 为 `List<T>`）
+- `EMsgToServerType.cs`（request 方向枚举）
+- `EMsgToClientType.cs`（response/notify 方向枚举）
+- `EMsgType.cs`（`partial class` 绑定 `MsgType`/`MsgTypeInt`/`GetMsgType`，实现 `IProtoBufToServer`/`IProtoBufToClient`；含 `EMsgErrorType ret` 字段时附加 `IRetErrorType`）
+
+字段覆盖：标量、bytes、enum、message 引用、repeated、map（`[ProtoMap] Dictionary<K,V>`）、oneof（protobuf-net `DiscriminatedUnion*` + `*OneofCase`）、proto2 group（`DataFormat.Group`）。proto3 `optional` 的合成 oneof 会被忽略并按普通字段输出。`--package`/`--side` 对 C# 无效（全局命名空间），且只支持 `emit`。
 
 如果某个工程使用不同包路径，可以通过参数覆盖。
 

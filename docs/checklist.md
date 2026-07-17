@@ -31,10 +31,9 @@
 
 ## Proto Options
 
-- [x] Add `proto/options/transform.proto`.
-- [x] Add generated or handwritten Go option bindings.
-- [x] Write descriptor test fixture using message options.
-- [x] Add file-level message ID range options and descriptor validation.
+- [x] Keep `proto/options/transform.proto` as a reserved empty package (no message_id/message_kind options).
+- [x] Descriptor loads business messages without transform options.
+- [x] Message kind comes from YAML role + name convention; message id from deterministic hash + optional `msgid.lock.yaml`.
 
 ## YAML Definitions
 

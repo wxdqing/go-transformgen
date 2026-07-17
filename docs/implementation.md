@@ -85,7 +85,7 @@ Reads descriptor set files.
 func Load(path string) (*Set, error)
 ```
 
-The set exposes protobuf full names, message IDs, message kinds, Go import paths, and Go type names. When a proto file sets file-level `message_id_min` and `message_id_max` options, descriptor loading rejects messages whose `message_id` is outside that closed range. The Go target uses descriptor `go_package` data to import proto message packages even when generated protocol code lives in a different package.
+The set exposes protobuf full names, inferred message kinds (from naming), Go import paths, and Go type names. Runtime message IDs are assigned later by `internal/msgid` during model build. The Go target uses descriptor `go_package` data to import proto message packages even when generated protocol code lives in a different package.
 
 ### `internal/model`
 
@@ -144,7 +144,7 @@ When the generated package differs from the proto message package, the Go target
 --go-import key=value
 ```
 
-Go defaults to `--runtime emit`, which writes runtime support files into the output package. `--runtime import` is only for projects that provide their own external frame/registry packages through `--go-import frame=...` and `--go-import registry=...`. C# supports runtime emit and can generate requester/responder protocol helpers without depending on Go runtime packages.
+Go defaults to `--runtime emit`, which writes runtime support files into the output package. `--runtime import` is only for projects that provide their own external frame/registry packages through `--go-import frame=...` and `--go-import registry=...`. C# runtime emit produces TianLong3-style `EMsgToServerType.cs`, `EMsgToClientType.cs`, and `EMsgType.cs`.
 
 ## BDD Acceptance Scenarios
 
