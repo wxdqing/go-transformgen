@@ -1,0 +1,6 @@
+public enum EMsgToServerType
+{
+{{- range .ServerMessages }}
+    {{ .Name }} = {{ .ID }},
+{{- end }}
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
@@ -20,6 +21,9 @@ const (
 	RuntimeModeEmit   RuntimeMode = "emit"
 )
 
+// Options keeps the CLI surface stable. Generated C# lives in the global
+// namespace to match TianLong3 protobuf-net types, so Namespace and Sides are
+// accepted but ignored.
 type Options struct {
 	Namespace string
 	Sides     []string
@@ -31,195 +35,297 @@ type File struct {
 	Content []byte
 }
 
-func Render(m *model.Model, opts Options) ([]File, error) {
-	if opts.Namespace == "" {
-		return nil, fmt.Errorf("csharp target: namespace is required")
-	}
+// Render emits TianLong3-style client protocol files:
+//   - per-proto protobuf-net message/enum classes
+//   - EMsgToServerType / EMsgToClientType / EMsgType bindings
+func Render(m *model.Model, desc *descriptor.Set, opts Options) ([]File, error) {
 	if opts.Runtime == "" {
 		opts.Runtime = RuntimeModeEmit
 	}
 	if opts.Runtime != RuntimeModeEmit {
 		return nil, fmt.Errorf("csharp target: only runtime emit is supported")
 	}
-	side, err := parseSides(opts.Sides)
-	if err != nil {
-		return nil, err
+	if desc == nil {
+		return nil, fmt.Errorf("csharp target: descriptor set is required")
 	}
-	view := buildView(m, opts, side)
-	files := make([]File, 0, 3+len(view.Modules)*2)
+	protocol := buildProtocolView(m)
+	files := make([]File, 0, 3+len(desc.Files()))
 	for _, spec := range []struct {
 		name string
 		text string
+		data any
 	}{
-		{name: "Frame.cs", text: frameTemplate},
-		{name: "ProtocolRuntime.cs", text: runtimeTemplate},
-		{name: "ProtocolMessages.cs", text: messagesTemplate},
+		{name: "EMsgToServerType.cs", text: serverEnumTemplate, data: protocol},
+		{name: "EMsgToClientType.cs", text: clientEnumTemplate, data: protocol},
+		{name: "EMsgType.cs", text: bindingTemplate, data: protocol},
 	} {
-		file, err := renderTemplate(spec.name, spec.text, view)
+		file, err := renderTemplate(spec.name, spec.text, spec.data)
 		if err != nil {
 			return nil, err
 		}
 		files = append(files, file)
 	}
-	for _, module := range view.Modules {
-		if side.requester {
-			file, err := renderTemplate(module.ClassName+"Requester.cs", requesterTemplate, module)
-			if err != nil {
-				return nil, err
-			}
-			files = append(files, file)
+	for _, protoFile := range buildProtoFileViews(desc) {
+		if len(protoFile.Messages) == 0 && len(protoFile.Enums) == 0 {
+			continue
 		}
-		if side.responder {
-			file, err := renderTemplate(module.ClassName+"Responder.cs", responderTemplate, module)
-			if err != nil {
-				return nil, err
-			}
-			files = append(files, file)
+		file, err := renderTemplate(protoFile.OutputName, protoFileTemplate, protoFile)
+		if err != nil {
+			return nil, err
 		}
+		files = append(files, file)
 	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
 }
 
-type selectedSides struct {
-	requester bool
-	responder bool
+type enumMember struct {
+	Name string
+	ID   uint32
 }
 
-func parseSides(sides []string) (selectedSides, error) {
-	if len(sides) == 0 {
-		return selectedSides{requester: true}, nil
-	}
-	var out selectedSides
-	for _, side := range sides {
-		switch strings.TrimSpace(side) {
-		case "requester":
-			out.requester = true
-		case "responder":
-			out.responder = true
-		case "":
-		default:
-			return selectedSides{}, fmt.Errorf("csharp target: unsupported side %q", side)
-		}
-	}
-	if !out.requester && !out.responder {
-		return selectedSides{}, fmt.Errorf("csharp target: at least one side is required")
-	}
-	return out, nil
+type binding struct {
+	ClassName   string
+	Interface   string
+	EnumType    string
+	EnumName    string
+	HasRetError bool
 }
 
-type viewModel struct {
-	Namespace string
-	Messages  []messageView
-	Modules   []moduleView
+type protocolView struct {
+	ServerMessages []enumMember
+	ClientMessages []enumMember
+	Bindings       []binding
+	HasAnyRetError bool
 }
 
-type moduleView struct {
-	Namespace string
-	ClassName string
-	RPCs      []rpcView
-	Notifies  []notifyView
+type fieldView struct {
+	Number             int32
+	Property           string
+	Type               string
+	MapKeyType         string
+	MapValType         string
+	IsRepeated         bool
+	IsString           bool
+	IsMap              bool
+	IsGroup            bool
+	IsOneof            bool
+	IsFirstOneofMember bool
+	OneofUnionType     string
+	OneofUnionField    string
+	OneofGetter        string
+	OneofSetter        string
+}
+
+type oneofMemberView struct {
+	Property string
+	Number   int32
+}
+
+type oneofView struct {
+	CaseEnum     string
+	CaseProperty string
+	UnionField   string
+	Members      []oneofMemberView
 }
 
 type messageView struct {
-	Name      string
-	ConstName string
-	ID        uint32
-	Kind      descriptor.MessageKind
-	Type      string
+	Name   string
+	Fields []fieldView
+	Oneofs []oneofView
 }
 
-type rpcView struct {
-	Method       string
-	RequestID    string
-	ResponseID   string
-	RequestType  string
-	ResponseType string
+type enumView struct {
+	Name   string
+	Values []descriptor.EnumValue
 }
 
-type notifyView struct {
-	Method    string
-	MessageID string
-	Type      string
+type protoFileView struct {
+	BaseName   string
+	OutputName string
+	Messages   []messageView
+	Enums      []enumView
 }
 
-func buildView(m *model.Model, opts Options, _ selectedSides) viewModel {
-	seen := make(map[uint32]messageView)
-	view := viewModel{Namespace: opts.Namespace}
-	for _, module := range m.Modules {
-		mv := moduleView{Namespace: opts.Namespace, ClassName: pascal(module.Name)}
-		for _, rpc := range module.RPCs {
-			req := messageFromDescriptor(rpc.Request, opts.Namespace)
-			resp := messageFromDescriptor(rpc.Response, opts.Namespace)
-			seen[rpc.Request.ID] = req
-			seen[rpc.Response.ID] = resp
-			mv.RPCs = append(mv.RPCs, rpcView{
-				Method:       rpc.Method,
-				RequestID:    req.ConstName,
-				ResponseID:   resp.ConstName,
-				RequestType:  req.Type,
-				ResponseType: resp.Type,
+func buildProtocolView(m *model.Model) protocolView {
+	seen := make(map[string]bool)
+	var view protocolView
+	add := func(msg descriptor.Message) {
+		if msg.FullName == "" || seen[msg.FullName] {
+			return
+		}
+		seen[msg.FullName] = true
+		name := msg.CSharp.TypeName
+		if name == "" {
+			name = msg.ProtoName
+		}
+		toServer := msg.Kind == descriptor.MessageKindRequest
+		if msg.HasRetError {
+			view.HasAnyRetError = true
+		}
+		if toServer {
+			view.ServerMessages = append(view.ServerMessages, enumMember{Name: name, ID: msg.ID})
+			view.Bindings = append(view.Bindings, binding{
+				ClassName:   name,
+				Interface:   "IProtoBufToServer",
+				EnumType:    "EMsgToServerType",
+				EnumName:    name,
+				HasRetError: msg.HasRetError,
 			})
+			return
+		}
+		view.ClientMessages = append(view.ClientMessages, enumMember{Name: name, ID: msg.ID})
+		view.Bindings = append(view.Bindings, binding{
+			ClassName:   name,
+			Interface:   "IProtoBufToClient",
+			EnumType:    "EMsgToClientType",
+			EnumName:    name,
+			HasRetError: msg.HasRetError,
+		})
+	}
+	for _, module := range m.Modules {
+		for _, rpc := range module.RPCs {
+			add(rpc.Request)
+			add(rpc.Response)
 		}
 		for _, notify := range module.Notifies {
-			msg := messageFromDescriptor(notify.Message, opts.Namespace)
-			seen[notify.Message.ID] = msg
-			mv.Notifies = append(mv.Notifies, notifyView{
-				Method:    notify.Method,
-				MessageID: msg.ConstName,
-				Type:      msg.Type,
-			})
+			add(notify.Message)
 		}
-		view.Modules = append(view.Modules, mv)
 	}
-	for _, msg := range seen {
-		view.Messages = append(view.Messages, msg)
-	}
-	sort.Slice(view.Messages, func(i, j int) bool {
-		return view.Messages[i].ID < view.Messages[j].ID
-	})
-	sort.Slice(view.Modules, func(i, j int) bool {
-		return view.Modules[i].ClassName < view.Modules[j].ClassName
-	})
+	sort.Slice(view.ServerMessages, func(i, j int) bool { return view.ServerMessages[i].ID < view.ServerMessages[j].ID })
+	sort.Slice(view.ClientMessages, func(i, j int) bool { return view.ClientMessages[i].ID < view.ClientMessages[j].ID })
+	sort.Slice(view.Bindings, func(i, j int) bool { return view.Bindings[i].ClassName < view.Bindings[j].ClassName })
 	return view
 }
 
-func messageFromDescriptor(msg descriptor.Message, namespace string) messageView {
-	typeName := msg.CSharp.TypeName
-	if typeName == "" {
-		typeName = msg.ProtoName
+func buildProtoFileViews(desc *descriptor.Set) []protoFileView {
+	files := desc.Files()
+	out := make([]protoFileView, 0, len(files))
+	for _, file := range files {
+		view := protoFileView{
+			BaseName:   file.BaseName,
+			OutputName: csharpFileName(file.BaseName),
+		}
+		for _, fullName := range file.Enums {
+			enum, ok := desc.Enum(fullName)
+			if !ok {
+				continue
+			}
+			view.Enums = append(view.Enums, enumView{Name: enum.ProtoName, Values: enum.Values})
+		}
+		for _, fullName := range file.Messages {
+			msg, ok := desc.Message(fullName)
+			if !ok {
+				continue
+			}
+			mv := messageView{Name: msg.ProtoName}
+			for _, field := range msg.Fields {
+				mv.Fields = append(mv.Fields, fieldViewFromDescriptor(field))
+			}
+			for _, oneof := range msg.Oneofs {
+				ov := oneofView{
+					CaseEnum:     pascal(oneof.Name) + "OneofCase",
+					CaseProperty: pascal(oneof.Name) + "Case",
+					UnionField:   "__pbn__" + oneof.Name,
+				}
+				for _, field := range msg.Fields {
+					if field.OneofName != oneof.Name {
+						continue
+					}
+					ov.Members = append(ov.Members, oneofMemberView{
+						Property: csharpPropertyName(field),
+						Number:   field.Number,
+					})
+				}
+				mv.Oneofs = append(mv.Oneofs, ov)
+			}
+			view.Messages = append(view.Messages, mv)
+		}
+		out = append(out, view)
 	}
-	if typeName == "" {
-		typeName = msg.GoTypeName
+	return out
+}
+
+func fieldViewFromDescriptor(field descriptor.Field) fieldView {
+	typeName := field.ScalarType
+	switch field.TypeKind {
+	case descriptor.FieldTypeMessage, descriptor.FieldTypeEnum:
+		typeName = field.TypeName
+	case descriptor.FieldTypeBytes:
+		typeName = "byte[]"
+	case descriptor.FieldTypeMap:
+		typeName = fmt.Sprintf("Dictionary<%s, %s>", field.MapKeyType, field.MapValType)
 	}
-	ref := typeName
-	if msg.CSharp.Namespace != "" && msg.CSharp.Namespace != namespace {
-		ref = msg.CSharp.Namespace + "." + typeName
+	view := fieldView{
+		Number:             field.Number,
+		Property:           csharpPropertyName(field),
+		Type:               typeName,
+		MapKeyType:         field.MapKeyType,
+		MapValType:         field.MapValType,
+		IsRepeated:         field.Cardinal == descriptor.FieldRepeated && field.TypeKind != descriptor.FieldTypeMap && field.OneofName == "",
+		IsString:           field.TypeKind == descriptor.FieldTypeScalar && field.ScalarType == "string" && field.Cardinal != descriptor.FieldRepeated && field.OneofName == "",
+		IsMap:              field.TypeKind == descriptor.FieldTypeMap,
+		IsGroup:            field.IsGroup,
+		IsOneof:            field.OneofName != "",
+		IsFirstOneofMember: field.IsFirstOneofMember,
+		OneofUnionType:     field.OneofUnionType,
+		OneofUnionField:    field.OneofUnionField,
 	}
-	return messageView{
-		Name:      typeName,
-		ConstName: typeName,
-		ID:        msg.ID,
-		Kind:      msg.Kind,
-		Type:      ref,
+	if view.IsOneof {
+		view.OneofGetter, view.OneofSetter = oneofAccessors(field, typeName)
+	}
+	return view
+}
+
+func oneofAccessors(field descriptor.Field, typeName string) (getter, setter string) {
+	storage := field.OneofStorage
+	union := field.OneofUnionField
+	switch {
+	case field.TypeKind == descriptor.FieldTypeEnum:
+		return fmt.Sprintf("((%s)%s.%s)", typeName, union, storage), fmt.Sprintf("(int)value")
+	case storage == "Object":
+		return fmt.Sprintf("((%s)%s.Object)", typeName, union), "value"
+	default:
+		return fmt.Sprintf("%s.%s", union, storage), "value"
 	}
 }
 
+func csharpPropertyName(field descriptor.Field) string {
+	name := field.JSONName
+	if name == "" {
+		name = field.Name
+	}
+	if name == "" {
+		return name
+	}
+	if strings.Contains(name, "_") {
+		return pascal(name)
+	}
+	runes := []rune(name)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
+}
+
+func csharpFileName(baseName string) string {
+	ext := filepath.Ext(baseName)
+	stem := strings.TrimSuffix(baseName, ext)
+	return pascal(stem) + ".cs"
+}
+
 func pascal(value string) string {
-	parts := strings.Split(value, "_")
-	var builder strings.Builder
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == '_' || r == '-' || r == '.'
+	})
+	var b strings.Builder
 	for _, part := range parts {
 		if part == "" {
 			continue
 		}
-		for i, r := range part {
-			if i == 0 {
-				builder.WriteRune(unicode.ToUpper(r))
-				continue
-			}
-			builder.WriteRune(r)
-		}
+		runes := []rune(part)
+		runes[0] = unicode.ToUpper(runes[0])
+		b.WriteString(string(runes))
 	}
-	return builder.String()
+	return b.String()
 }
 
 func renderTemplate(name, text string, data any) (File, error) {
@@ -234,17 +340,14 @@ func renderTemplate(name, text string, data any) (File, error) {
 	return File{Path: name, Content: buf.Bytes()}, nil
 }
 
-//go:embed templates/Frame.cs.tmpl
-var frameTemplate string
+//go:embed templates/EMsgToServerType.cs.tmpl
+var serverEnumTemplate string
 
-//go:embed templates/ProtocolRuntime.cs.tmpl
-var runtimeTemplate string
+//go:embed templates/EMsgToClientType.cs.tmpl
+var clientEnumTemplate string
 
-//go:embed templates/ProtocolMessages.cs.tmpl
-var messagesTemplate string
+//go:embed templates/EMsgType.cs.tmpl
+var bindingTemplate string
 
-//go:embed templates/Requester.cs.tmpl
-var requesterTemplate string
-
-//go:embed templates/Responder.cs.tmpl
-var responderTemplate string
+//go:embed templates/ProtoFile.cs.tmpl
+var protoFileTemplate string

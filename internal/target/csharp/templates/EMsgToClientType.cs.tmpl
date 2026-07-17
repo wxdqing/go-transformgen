@@ -1,0 +1,6 @@
+public enum EMsgToClientType
+{
+{{- range .ClientMessages }}
+    {{ .Name }} = {{ .ID }},
+{{- end }}
+}

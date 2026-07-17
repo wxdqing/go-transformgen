@@ -1,0 +1,22 @@
+using ProtoBuf;
+using System.Runtime.CompilerServices;
+{{ if .HasAnyRetError }}
+public interface IRetErrorType
+{ 
+    public EMsgErrorType Ret { get; }
+}
+{{ end }}
+public interface IProtoBufToServer : IProtoBuf<EMsgToServerType> { }
+public interface IProtoBufToClient : IProtoBuf<EMsgToClientType> { }
+{{ range .Bindings }}
+public partial class {{ .ClassName }} : {{ .Interface }}{{ if .HasRetError }}, IRetErrorType{{ end }}
+{
+    public const {{ .EnumType }} MsgType = {{ .EnumType }}.{{ .EnumName }};
+    public const int MsgTypeInt = (int)MsgType;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public {{ .EnumType }} GetMsgType() => MsgType;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int GetMsgTypeInt() => MsgTypeInt;
+}
+{{ end -}}
