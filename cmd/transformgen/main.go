@@ -11,6 +11,7 @@ import (
 	"github.com/wxdqing/go-transformgen/internal/define"
 	"github.com/wxdqing/go-transformgen/internal/descriptor"
 	"github.com/wxdqing/go-transformgen/internal/model"
+	"github.com/wxdqing/go-transformgen/internal/msgidlock"
 	csharptarget "github.com/wxdqing/go-transformgen/internal/target/csharp"
 	gotarget "github.com/wxdqing/go-transformgen/internal/target/go"
 )
@@ -49,6 +50,7 @@ func main() {
 func run(args []string) error {
 	var protoSet string
 	var definesDir string
+	var msgidLock string
 	var target string
 	var side string
 	var outDir string
@@ -59,6 +61,7 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("transformgen", flag.ContinueOnError)
 	fs.StringVar(&protoSet, "proto-set", "", "protoc descriptor set file")
 	fs.StringVar(&definesDir, "defines-dir", "", "YAML definitions directory")
+	fs.StringVar(&msgidLock, "msgid-lock", "", "message id lock file (yaml); created/updated to keep ids stable")
 	fs.StringVar(&target, "target", "go", "target language")
 	fs.StringVar(&side, "side", "requester,responder", "generated side")
 	fs.StringVar(&outDir, "out", "", "output directory")
@@ -79,11 +82,18 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	built, err := model.Build(desc, modules)
+	var locked map[string]uint32
+	if msgidLock != "" {
+		locked, err = msgidlock.Load(msgidLock)
+		if err != nil {
+			return err
+		}
+	}
+	built, nextLock, err := model.Build(desc, modules, locked)
 	if err != nil {
 		return err
 	}
-	files, err := renderTarget(target, built, packageName, splitCSV(side), runtimeMode, goImports)
+	files, err := renderTarget(target, built, desc, packageName, splitCSV(side), runtimeMode, goImports)
 	if err != nil {
 		return err
 	}
@@ -96,6 +106,14 @@ func run(args []string) error {
 			return err
 		}
 	}
+	if msgidLock != "" {
+		if err := os.MkdirAll(filepath.Dir(msgidLock), 0o755); err != nil {
+			return err
+		}
+		if err := msgidlock.Save(msgidLock, nextLock); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -104,7 +122,7 @@ type outputFile struct {
 	Content []byte
 }
 
-func renderTarget(target string, built *model.Model, packageName string, sides []string, runtimeMode string, goImports importMap) ([]outputFile, error) {
+func renderTarget(target string, built *model.Model, desc *descriptor.Set, packageName string, sides []string, runtimeMode string, goImports importMap) ([]outputFile, error) {
 	switch target {
 	case "go":
 		files, err := gotarget.Render(built, gotarget.Options{
@@ -118,7 +136,7 @@ func renderTarget(target string, built *model.Model, packageName string, sides [
 		}
 		return goOutputFiles(files), nil
 	case "csharp":
-		files, err := csharptarget.Render(built, csharptarget.Options{
+		files, err := csharptarget.Render(built, desc, csharptarget.Options{
 			Namespace: packageName,
 			Sides:     sides,
 			Runtime:   csharptarget.RuntimeMode(runtimeMode),
