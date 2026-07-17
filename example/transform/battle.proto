@@ -2,32 +2,24 @@ syntax = "proto3";
 
 package transform.example;
 
-import "proto/options/transform.proto";
+import "example/transform/common.proto";
 
 option go_package = "github.com/wxdqing/go-transformgen/example/transform;examplepb";
-option (transformgen.options.message_id_min) = 1100;
-option (transformgen.options.message_id_max) = 2101;
 
 message StartBattleRequest {
-  option (transformgen.options.message_id) = 1101;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_REQUEST;
-
   uint64 player_id = 1;
   string stage_id = 2;
+  repeated MsgDataTag tags = 3;
+  map<int32, MsgDataTag> tag_by_slot = 4;
 }
 
 message StartBattleResponse {
-  option (transformgen.options.message_id) = 1102;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_RESPONSE;
-
-  uint64 battle_id = 1;
-  bool accepted = 2;
+  EMsgErrorType ret = 1;
+  uint64 battle_id = 2;
+  bool accepted = 3;
 }
 
 message BattleStateNotify {
-  option (transformgen.options.message_id) = 2101;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_NOTIFY;
-
   uint64 battle_id = 1;
   string state = 2;
 }

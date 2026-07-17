@@ -2,32 +2,22 @@ syntax = "proto3";
 
 package transform.example;
 
-import "proto/options/transform.proto";
+import "example/transform/common.proto";
 
 option go_package = "github.com/wxdqing/go-transformgen/example/transform;examplepb";
-option (transformgen.options.message_id_min) = 1000;
-option (transformgen.options.message_id_max) = 2001;
 
 message HeartbeatRequest {
-  option (transformgen.options.message_id) = 1001;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_REQUEST;
-
   int64 client_time = 1;
   uint64 sequence = 2;
 }
 
 message HeartbeatResponse {
-  option (transformgen.options.message_id) = 1002;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_RESPONSE;
-
-  int64 server_time = 1;
-  int64 client_time = 2;
-  uint64 sequence = 3;
+  EMsgErrorType ret = 1;
+  int64 server_time = 2;
+  int64 client_time = 3;
+  uint64 sequence = 4;
 }
 
 message BattleFinishedNotify {
-  option (transformgen.options.message_id) = 2001;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_NOTIFY;
-
   uint64 battle_id = 1;
 }

@@ -7,7 +7,6 @@
 package examplepb
 
 import (
-	_ "github.com/wxdqing/go-transformgen/proto/options"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -76,9 +75,10 @@ func (x *HeartbeatRequest) GetSequence() uint64 {
 
 type HeartbeatResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ServerTime    int64                  `protobuf:"varint,1,opt,name=server_time,json=serverTime,proto3" json:"server_time,omitempty"`
-	ClientTime    int64                  `protobuf:"varint,2,opt,name=client_time,json=clientTime,proto3" json:"client_time,omitempty"`
-	Sequence      uint64                 `protobuf:"varint,3,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Ret           EMsgErrorType          `protobuf:"varint,1,opt,name=ret,proto3,enum=transform.example.EMsgErrorType" json:"ret,omitempty"`
+	ServerTime    int64                  `protobuf:"varint,2,opt,name=server_time,json=serverTime,proto3" json:"server_time,omitempty"`
+	ClientTime    int64                  `protobuf:"varint,3,opt,name=client_time,json=clientTime,proto3" json:"client_time,omitempty"`
+	Sequence      uint64                 `protobuf:"varint,4,opt,name=sequence,proto3" json:"sequence,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,6 +111,13 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
 	return file_example_transform_heartbeat_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *HeartbeatResponse) GetRet() EMsgErrorType {
+	if x != nil {
+		return x.Ret
+	}
+	return EMsgErrorType_None
 }
 
 func (x *HeartbeatResponse) GetServerTime() int64 {
@@ -182,19 +189,20 @@ var File_example_transform_heartbeat_proto protoreflect.FileDescriptor
 
 const file_example_transform_heartbeat_proto_rawDesc = "" +
 	"\n" +
-	"!example/transform/heartbeat.proto\x12\x11transform.example\x1a\x1dproto/options/transform.proto\"Z\n" +
+	"!example/transform/heartbeat.proto\x12\x11transform.example\x1a\x1eexample/transform/common.proto\"O\n" +
 	"\x10HeartbeatRequest\x12\x1f\n" +
 	"\vclient_time\x18\x01 \x01(\x03R\n" +
 	"clientTime\x12\x1a\n" +
-	"\bsequence\x18\x02 \x01(\x04R\bsequence:\t\xc8\xf3\x18\xe9\a\xd0\xf3\x18\x01\"|\n" +
-	"\x11HeartbeatResponse\x12\x1f\n" +
-	"\vserver_time\x18\x01 \x01(\x03R\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\"\xa5\x01\n" +
+	"\x11HeartbeatResponse\x122\n" +
+	"\x03ret\x18\x01 \x01(\x0e2 .transform.example.EMsgErrorTypeR\x03ret\x12\x1f\n" +
+	"\vserver_time\x18\x02 \x01(\x03R\n" +
 	"serverTime\x12\x1f\n" +
-	"\vclient_time\x18\x02 \x01(\x03R\n" +
+	"\vclient_time\x18\x03 \x01(\x03R\n" +
 	"clientTime\x12\x1a\n" +
-	"\bsequence\x18\x03 \x01(\x04R\bsequence:\t\xc8\xf3\x18\xea\a\xd0\xf3\x18\x02\">\n" +
+	"\bsequence\x18\x04 \x01(\x04R\bsequence\"3\n" +
 	"\x14BattleFinishedNotify\x12\x1b\n" +
-	"\tbattle_id\x18\x01 \x01(\x04R\bbattleId:\t\xc8\xf3\x18\xd1\x0f\xd0\xf3\x18\x03BJ\xd8\xf3\x18\xe8\a\xe0\xf3\x18\xd1\x0fZ>github.com/wxdqing/go-transformgen/example/transform;examplepbb\x06proto3"
+	"\tbattle_id\x18\x01 \x01(\x04R\bbattleIdB@Z>github.com/wxdqing/go-transformgen/example/transform;examplepbb\x06proto3"
 
 var (
 	file_example_transform_heartbeat_proto_rawDescOnce sync.Once
@@ -213,13 +221,15 @@ var file_example_transform_heartbeat_proto_goTypes = []any{
 	(*HeartbeatRequest)(nil),     // 0: transform.example.HeartbeatRequest
 	(*HeartbeatResponse)(nil),    // 1: transform.example.HeartbeatResponse
 	(*BattleFinishedNotify)(nil), // 2: transform.example.BattleFinishedNotify
+	(EMsgErrorType)(0),           // 3: transform.example.EMsgErrorType
 }
 var file_example_transform_heartbeat_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	3, // 0: transform.example.HeartbeatResponse.ret:type_name -> transform.example.EMsgErrorType
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_example_transform_heartbeat_proto_init() }
@@ -227,6 +237,7 @@ func file_example_transform_heartbeat_proto_init() {
 	if File_example_transform_heartbeat_proto != nil {
 		return
 	}
+	file_example_transform_common_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

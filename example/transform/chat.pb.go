@@ -7,7 +7,6 @@
 package examplepb
 
 import (
-	_ "github.com/wxdqing/go-transformgen/proto/options"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -76,7 +75,8 @@ func (x *SendChatRequest) GetContent() string {
 
 type SendChatResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	MessageId     uint64                 `protobuf:"varint,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	Ret           EMsgErrorType          `protobuf:"varint,1,opt,name=ret,proto3,enum=transform.example.EMsgErrorType" json:"ret,omitempty"`
+	MessageId     uint64                 `protobuf:"varint,2,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,6 +111,13 @@ func (*SendChatResponse) Descriptor() ([]byte, []int) {
 	return file_example_transform_chat_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *SendChatResponse) GetRet() EMsgErrorType {
+	if x != nil {
+		return x.Ret
+	}
+	return EMsgErrorType_None
+}
+
 func (x *SendChatResponse) GetMessageId() uint64 {
 	if x != nil {
 		return x.MessageId
@@ -123,6 +130,13 @@ type ChatMessageNotify struct {
 	ChannelId     uint64                 `protobuf:"varint,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
 	MessageId     uint64                 `protobuf:"varint,2,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
 	Content       string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	Mentions      []string               `protobuf:"bytes,4,rep,name=mentions,proto3" json:"mentions,omitempty"`
+	MentionCounts map[string]int32       `protobuf:"bytes,5,rep,name=mention_counts,json=mentionCounts,proto3" json:"mention_counts,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// Types that are valid to be assigned to Attachment:
+	//
+	//	*ChatMessageNotify_TextAttachment
+	//	*ChatMessageNotify_TagAttachment
+	Attachment    isChatMessageNotify_Attachment `protobuf_oneof:"attachment"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -178,24 +192,89 @@ func (x *ChatMessageNotify) GetContent() string {
 	return ""
 }
 
+func (x *ChatMessageNotify) GetMentions() []string {
+	if x != nil {
+		return x.Mentions
+	}
+	return nil
+}
+
+func (x *ChatMessageNotify) GetMentionCounts() map[string]int32 {
+	if x != nil {
+		return x.MentionCounts
+	}
+	return nil
+}
+
+func (x *ChatMessageNotify) GetAttachment() isChatMessageNotify_Attachment {
+	if x != nil {
+		return x.Attachment
+	}
+	return nil
+}
+
+func (x *ChatMessageNotify) GetTextAttachment() string {
+	if x != nil {
+		if x, ok := x.Attachment.(*ChatMessageNotify_TextAttachment); ok {
+			return x.TextAttachment
+		}
+	}
+	return ""
+}
+
+func (x *ChatMessageNotify) GetTagAttachment() *MsgDataTag {
+	if x != nil {
+		if x, ok := x.Attachment.(*ChatMessageNotify_TagAttachment); ok {
+			return x.TagAttachment
+		}
+	}
+	return nil
+}
+
+type isChatMessageNotify_Attachment interface {
+	isChatMessageNotify_Attachment()
+}
+
+type ChatMessageNotify_TextAttachment struct {
+	TextAttachment string `protobuf:"bytes,6,opt,name=text_attachment,json=textAttachment,proto3,oneof"`
+}
+
+type ChatMessageNotify_TagAttachment struct {
+	TagAttachment *MsgDataTag `protobuf:"bytes,7,opt,name=tag_attachment,json=tagAttachment,proto3,oneof"`
+}
+
+func (*ChatMessageNotify_TextAttachment) isChatMessageNotify_Attachment() {}
+
+func (*ChatMessageNotify_TagAttachment) isChatMessageNotify_Attachment() {}
+
 var File_example_transform_chat_proto protoreflect.FileDescriptor
 
 const file_example_transform_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x1cexample/transform/chat.proto\x12\x11transform.example\x1a\x1dproto/options/transform.proto\"U\n" +
+	"\x1cexample/transform/chat.proto\x12\x11transform.example\x1a\x1eexample/transform/common.proto\"J\n" +
 	"\x0fSendChatRequest\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\x04R\tchannelId\x12\x18\n" +
-	"\acontent\x18\x02 \x01(\tR\acontent:\t\xc8\xf3\x18\xb1\t\xd0\xf3\x18\x01\"<\n" +
-	"\x10SendChatResponse\x12\x1d\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\"e\n" +
+	"\x10SendChatResponse\x122\n" +
+	"\x03ret\x18\x01 \x01(\x0e2 .transform.example.EMsgErrorTypeR\x03ret\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x01 \x01(\x04R\tmessageId:\t\xc8\xf3\x18\xb2\t\xd0\xf3\x18\x02\"v\n" +
+	"message_id\x18\x02 \x01(\x04R\tmessageId\"\xaa\x03\n" +
 	"\x11ChatMessageNotify\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\x04R\tchannelId\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x02 \x01(\x04R\tmessageId\x12\x18\n" +
-	"\acontent\x18\x03 \x01(\tR\acontent:\t\xc8\xf3\x18\x99\x11\xd0\xf3\x18\x03BJ\xd8\xf3\x18\xb0\t\xe0\xf3\x18\x99\x11Z>github.com/wxdqing/go-transformgen/example/transform;examplepbb\x06proto3"
+	"\acontent\x18\x03 \x01(\tR\acontent\x12\x1a\n" +
+	"\bmentions\x18\x04 \x03(\tR\bmentions\x12^\n" +
+	"\x0emention_counts\x18\x05 \x03(\v27.transform.example.ChatMessageNotify.MentionCountsEntryR\rmentionCounts\x12)\n" +
+	"\x0ftext_attachment\x18\x06 \x01(\tH\x00R\x0etextAttachment\x12F\n" +
+	"\x0etag_attachment\x18\a \x01(\v2\x1d.transform.example.MsgDataTagH\x00R\rtagAttachment\x1a@\n" +
+	"\x12MentionCountsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01B\f\n" +
+	"\n" +
+	"attachmentB@Z>github.com/wxdqing/go-transformgen/example/transform;examplepbb\x06proto3"
 
 var (
 	file_example_transform_chat_proto_rawDescOnce sync.Once
@@ -209,18 +288,24 @@ func file_example_transform_chat_proto_rawDescGZIP() []byte {
 	return file_example_transform_chat_proto_rawDescData
 }
 
-var file_example_transform_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_example_transform_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_example_transform_chat_proto_goTypes = []any{
 	(*SendChatRequest)(nil),   // 0: transform.example.SendChatRequest
 	(*SendChatResponse)(nil),  // 1: transform.example.SendChatResponse
 	(*ChatMessageNotify)(nil), // 2: transform.example.ChatMessageNotify
+	nil,                       // 3: transform.example.ChatMessageNotify.MentionCountsEntry
+	(EMsgErrorType)(0),        // 4: transform.example.EMsgErrorType
+	(*MsgDataTag)(nil),        // 5: transform.example.MsgDataTag
 }
 var file_example_transform_chat_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4, // 0: transform.example.SendChatResponse.ret:type_name -> transform.example.EMsgErrorType
+	3, // 1: transform.example.ChatMessageNotify.mention_counts:type_name -> transform.example.ChatMessageNotify.MentionCountsEntry
+	5, // 2: transform.example.ChatMessageNotify.tag_attachment:type_name -> transform.example.MsgDataTag
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_example_transform_chat_proto_init() }
@@ -228,13 +313,18 @@ func file_example_transform_chat_proto_init() {
 	if File_example_transform_chat_proto != nil {
 		return
 	}
+	file_example_transform_common_proto_init()
+	file_example_transform_chat_proto_msgTypes[2].OneofWrappers = []any{
+		(*ChatMessageNotify_TextAttachment)(nil),
+		(*ChatMessageNotify_TagAttachment)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_example_transform_chat_proto_rawDesc), len(file_example_transform_chat_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

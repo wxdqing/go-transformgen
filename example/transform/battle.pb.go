@@ -7,7 +7,6 @@
 package examplepb
 
 import (
-	_ "github.com/wxdqing/go-transformgen/proto/options"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -26,6 +25,8 @@ type StartBattleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PlayerId      uint64                 `protobuf:"varint,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
 	StageId       string                 `protobuf:"bytes,2,opt,name=stage_id,json=stageId,proto3" json:"stage_id,omitempty"`
+	Tags          []*MsgDataTag          `protobuf:"bytes,3,rep,name=tags,proto3" json:"tags,omitempty"`
+	TagBySlot     map[int32]*MsgDataTag  `protobuf:"bytes,4,rep,name=tag_by_slot,json=tagBySlot,proto3" json:"tag_by_slot,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -74,10 +75,25 @@ func (x *StartBattleRequest) GetStageId() string {
 	return ""
 }
 
+func (x *StartBattleRequest) GetTags() []*MsgDataTag {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *StartBattleRequest) GetTagBySlot() map[int32]*MsgDataTag {
+	if x != nil {
+		return x.TagBySlot
+	}
+	return nil
+}
+
 type StartBattleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	BattleId      uint64                 `protobuf:"varint,1,opt,name=battle_id,json=battleId,proto3" json:"battle_id,omitempty"`
-	Accepted      bool                   `protobuf:"varint,2,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Ret           EMsgErrorType          `protobuf:"varint,1,opt,name=ret,proto3,enum=transform.example.EMsgErrorType" json:"ret,omitempty"`
+	BattleId      uint64                 `protobuf:"varint,2,opt,name=battle_id,json=battleId,proto3" json:"battle_id,omitempty"`
+	Accepted      bool                   `protobuf:"varint,3,opt,name=accepted,proto3" json:"accepted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -110,6 +126,13 @@ func (x *StartBattleResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use StartBattleResponse.ProtoReflect.Descriptor instead.
 func (*StartBattleResponse) Descriptor() ([]byte, []int) {
 	return file_example_transform_battle_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *StartBattleResponse) GetRet() EMsgErrorType {
+	if x != nil {
+		return x.Ret
+	}
+	return EMsgErrorType_None
 }
 
 func (x *StartBattleResponse) GetBattleId() uint64 {
@@ -182,16 +205,22 @@ var File_example_transform_battle_proto protoreflect.FileDescriptor
 
 const file_example_transform_battle_proto_rawDesc = "" +
 	"\n" +
-	"\x1eexample/transform/battle.proto\x12\x11transform.example\x1a\x1dproto/options/transform.proto\"W\n" +
+	"\x1eexample/transform/battle.proto\x12\x11transform.example\x1a\x1eexample/transform/common.proto\"\xb2\x02\n" +
 	"\x12StartBattleRequest\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\x04R\bplayerId\x12\x19\n" +
-	"\bstage_id\x18\x02 \x01(\tR\astageId:\t\xc8\xf3\x18\xcd\b\xd0\xf3\x18\x01\"Y\n" +
-	"\x13StartBattleResponse\x12\x1b\n" +
-	"\tbattle_id\x18\x01 \x01(\x04R\bbattleId\x12\x1a\n" +
-	"\baccepted\x18\x02 \x01(\bR\baccepted:\t\xc8\xf3\x18\xce\b\xd0\xf3\x18\x02\"Q\n" +
+	"\bstage_id\x18\x02 \x01(\tR\astageId\x121\n" +
+	"\x04tags\x18\x03 \x03(\v2\x1d.transform.example.MsgDataTagR\x04tags\x12T\n" +
+	"\vtag_by_slot\x18\x04 \x03(\v24.transform.example.StartBattleRequest.TagBySlotEntryR\ttagBySlot\x1a[\n" +
+	"\x0eTagBySlotEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\x123\n" +
+	"\x05value\x18\x02 \x01(\v2\x1d.transform.example.MsgDataTagR\x05value:\x028\x01\"\x82\x01\n" +
+	"\x13StartBattleResponse\x122\n" +
+	"\x03ret\x18\x01 \x01(\x0e2 .transform.example.EMsgErrorTypeR\x03ret\x12\x1b\n" +
+	"\tbattle_id\x18\x02 \x01(\x04R\bbattleId\x12\x1a\n" +
+	"\baccepted\x18\x03 \x01(\bR\baccepted\"F\n" +
 	"\x11BattleStateNotify\x12\x1b\n" +
 	"\tbattle_id\x18\x01 \x01(\x04R\bbattleId\x12\x14\n" +
-	"\x05state\x18\x02 \x01(\tR\x05state:\t\xc8\xf3\x18\xb5\x10\xd0\xf3\x18\x03BJ\xd8\xf3\x18\xcc\b\xe0\xf3\x18\xb5\x10Z>github.com/wxdqing/go-transformgen/example/transform;examplepbb\x06proto3"
+	"\x05state\x18\x02 \x01(\tR\x05stateB@Z>github.com/wxdqing/go-transformgen/example/transform;examplepbb\x06proto3"
 
 var (
 	file_example_transform_battle_proto_rawDescOnce sync.Once
@@ -205,18 +234,25 @@ func file_example_transform_battle_proto_rawDescGZIP() []byte {
 	return file_example_transform_battle_proto_rawDescData
 }
 
-var file_example_transform_battle_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_example_transform_battle_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_example_transform_battle_proto_goTypes = []any{
 	(*StartBattleRequest)(nil),  // 0: transform.example.StartBattleRequest
 	(*StartBattleResponse)(nil), // 1: transform.example.StartBattleResponse
 	(*BattleStateNotify)(nil),   // 2: transform.example.BattleStateNotify
+	nil,                         // 3: transform.example.StartBattleRequest.TagBySlotEntry
+	(*MsgDataTag)(nil),          // 4: transform.example.MsgDataTag
+	(EMsgErrorType)(0),          // 5: transform.example.EMsgErrorType
 }
 var file_example_transform_battle_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4, // 0: transform.example.StartBattleRequest.tags:type_name -> transform.example.MsgDataTag
+	3, // 1: transform.example.StartBattleRequest.tag_by_slot:type_name -> transform.example.StartBattleRequest.TagBySlotEntry
+	5, // 2: transform.example.StartBattleResponse.ret:type_name -> transform.example.EMsgErrorType
+	4, // 3: transform.example.StartBattleRequest.TagBySlotEntry.value:type_name -> transform.example.MsgDataTag
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_example_transform_battle_proto_init() }
@@ -224,13 +260,14 @@ func file_example_transform_battle_proto_init() {
 	if File_example_transform_battle_proto != nil {
 		return
 	}
+	file_example_transform_common_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_example_transform_battle_proto_rawDesc), len(file_example_transform_battle_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

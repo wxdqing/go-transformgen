@@ -2,32 +2,28 @@ syntax = "proto3";
 
 package transform.example;
 
-import "proto/options/transform.proto";
+import "example/transform/common.proto";
 
 option go_package = "github.com/wxdqing/go-transformgen/example/transform;examplepb";
-option (transformgen.options.message_id_min) = 1200;
-option (transformgen.options.message_id_max) = 2201;
 
 message SendChatRequest {
-  option (transformgen.options.message_id) = 1201;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_REQUEST;
-
   uint64 channel_id = 1;
   string content = 2;
 }
 
 message SendChatResponse {
-  option (transformgen.options.message_id) = 1202;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_RESPONSE;
-
-  uint64 message_id = 1;
+  EMsgErrorType ret = 1;
+  uint64 message_id = 2;
 }
 
 message ChatMessageNotify {
-  option (transformgen.options.message_id) = 2201;
-  option (transformgen.options.message_kind) = MESSAGE_KIND_NOTIFY;
-
   uint64 channel_id = 1;
   uint64 message_id = 2;
   string content = 3;
+  repeated string mentions = 4;
+  map<string, int32> mention_counts = 5;
+  oneof attachment {
+    string text_attachment = 6;
+    MsgDataTag tag_attachment = 7;
+  }
 }

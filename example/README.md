@@ -14,6 +14,7 @@ protoc \
   --go_out=. \
   --go_opt=module=github.com/wxdqing/go-transformgen \
   -I . \
+  example/transform/common.proto \
   example/transform/heartbeat.proto \
   example/transform/battle.proto \
   example/transform/chat.proto
@@ -23,6 +24,7 @@ protoc \
   --include_imports \
   --include_source_info \
   -I . \
+  example/transform/common.proto \
   example/transform/heartbeat.proto \
   example/transform/battle.proto \
   example/transform/chat.proto
@@ -30,6 +32,7 @@ protoc \
 go run ./cmd/transformgen \
   --proto-set example/transform/transform.pbset \
   --defines-dir example/transform/defines \
+  --msgid-lock example/transform/msgid.lock.yaml \
   --target go \
   --side requester,responder \
   --runtime emit \
@@ -37,12 +40,15 @@ go run ./cmd/transformgen \
   --package protocolpb
 ```
 
+`msgid.lock.yaml` stores short-name → wire id. Existing entries are kept on regenerate; removed messages are dropped so their ids can be reused. Commit this file with the protocol.
+
 Generate Go requester-only helpers:
 
 ```bash
 go run ./cmd/transformgen \
   --proto-set example/transform/transform.pbset \
   --defines-dir example/transform/defines \
+  --msgid-lock example/transform/msgid.lock.yaml \
   --target go \
   --side requester \
   --runtime emit \
@@ -56,6 +62,7 @@ Generate C# protocol helpers:
 go run ./cmd/transformgen \
   --proto-set example/transform/transform.pbset \
   --defines-dir example/transform/defines \
+  --msgid-lock example/transform/msgid.lock.yaml \
   --target csharp \
   --side requester,responder \
   --runtime emit \

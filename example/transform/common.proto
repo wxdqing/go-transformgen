@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package transform.example;
+
+option go_package = "github.com/wxdqing/go-transformgen/example/transform;examplepb";
+
+enum EMsgErrorType {
+  None = 0;
+  InvalidArgument = 1;
+  NotFound = 2;
+}
+
+message MsgDataTag {
+  string name = 1;
+  int32 weight = 2;
+}
