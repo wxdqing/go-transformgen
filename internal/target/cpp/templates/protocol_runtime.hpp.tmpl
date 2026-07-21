@@ -1,0 +1,42 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <string>
+
+namespace {{ .Namespace }} {
+
+// PacketContext carries transport-owned routing and correlation data.
+// Server endpoints assign packet_seq for every response or notify; requester
+// uploads may leave it zero.
+struct PacketContext {
+  std::uint64_t connection_id{};
+  std::uint64_t request_id{};
+  std::uint32_t packet_seq{};
+};
+
+// Packet contains one protobuf payload and its protocol message id.
+struct Packet {
+  std::uint32_t message_id{};
+  std::string payload;
+};
+
+// PacketCallback handles one decoded transport packet.
+using PacketCallback = std::function<bool(const PacketContext&, const Packet&)>;
+
+// PacketEndpoint adapts generated protocol code to an application's transport.
+class PacketEndpoint {
+ public:
+  virtual ~PacketEndpoint() = default;
+
+  // RegisterPacketCallback registers a callback for one message id.
+  virtual bool RegisterPacketCallback(std::uint32_t message_id,
+                                      PacketCallback callback) = 0;
+
+  // SendPacket sends one packet. Server endpoints must replace packet_seq with
+  // the next sequence owned by the logical session for responses and notifies.
+  virtual bool SendPacket(const PacketContext& context,
+                          const Packet& packet) = 0;
+};
+
+}  // namespace {{ .Namespace }}

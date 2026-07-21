@@ -1,0 +1,37 @@
+#pragma once
+
+#include "protocol_messages.hpp"
+#include "protocol_runtime.hpp"
+
+namespace {{ .Namespace }}::{{ .Name }} {
+
+// ResponderHandler implements the {{ .Name }} module business logic.
+class ResponderHandler {
+ public:
+  virtual ~ResponderHandler() = default;
+{{ range .RPCs }}
+  // {{ .Method }} handles one request; fill response and return true to reply.
+  virtual bool {{ .Method }}(const PacketContext& context,
+                             const {{ .RequestType }}& request,
+                             {{ .ResponseType }}& response) = 0;
+{{ end -}}
+};
+
+// Responder decodes {{ .Name }} requests, invokes the handler, and replies.
+class Responder {
+ public:
+  Responder(PacketEndpoint& endpoint, ResponderHandler& handler);
+
+  // RegisterHandlers registers one packet callback per request id.
+  bool RegisterHandlers();
+{{ range .Notifies }}
+  // Send{{ .Method }} sends one one-way notify to the peer connection.
+  bool Send{{ .Method }}(const PacketContext& context,
+                         const {{ .MessageType }}& message);
+{{ end }}
+ private:
+  PacketEndpoint* endpoint_;
+  ResponderHandler* handler_;
+};
+
+}  // namespace {{ .Namespace }}::{{ .Name }}

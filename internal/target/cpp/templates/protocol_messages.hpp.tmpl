@@ -1,0 +1,72 @@
+#pragma once
+
+#include <cstdint>
+#include <memory>
+
+#include <google/protobuf/message.h>
+
+{{ range .Includes -}}
+#include "{{ . }}"
+{{ end }}
+namespace {{ .Namespace }} {
+
+// EMsgToServerType enumerates client-to-server request message ids.
+enum class EMsgToServerType : std::uint32_t {
+{{- range .ServerMessages }}
+  {{ .EnumName }} = {{ .ID }},
+{{- end }}
+};
+
+// EMsgToClientType enumerates server-to-client response and notify message ids.
+enum class EMsgToClientType : std::uint32_t {
+{{- range .ClientMessages }}
+  {{ .EnumName }} = {{ .ID }},
+{{- end }}
+};
+
+// ToMessageId converts a direction enum to its wire message id.
+constexpr std::uint32_t ToMessageId(EMsgToServerType type) noexcept {
+  return static_cast<std::uint32_t>(type);
+}
+
+// ToMessageId converts a direction enum to its wire message id.
+constexpr std::uint32_t ToMessageId(EMsgToClientType type) noexcept {
+  return static_cast<std::uint32_t>(type);
+}
+
+// MessageKind classifies protocol messages by their transport role.
+enum class MessageKind : std::uint8_t {
+  Unknown = 0,
+  Request = 1,
+  Response = 2,
+  Notify = 3,
+};
+
+// MessageMeta describes one protocol message.
+struct MessageMeta {
+  std::uint32_t message_id{};
+  MessageKind kind{MessageKind::Unknown};
+  const char* full_name{""};
+};
+
+// FindMessageMeta returns metadata for a message id, or nullptr when unknown.
+const MessageMeta* FindMessageMeta(std::uint32_t message_id) noexcept;
+
+// CreateMessage builds an empty protobuf instance for a message id, or nullptr when unknown.
+std::unique_ptr<google::protobuf::Message> CreateMessage(std::uint32_t message_id);
+
+// MessageId maps a protobuf type to its wire message id at compile time.
+template <typename Message>
+struct MessageId;
+
+{{ range .Messages }}
+template <>
+struct MessageId<{{ .CppType }}> {
+  static constexpr std::uint32_t value = {{ .ID }};
+};
+{{ end }}
+// MessageIdOf is the variable-template shorthand for MessageId<Message>::value.
+template <typename Message>
+inline constexpr std::uint32_t MessageIdOf = MessageId<Message>::value;
+
+}  // namespace {{ .Namespace }}

@@ -12,6 +12,7 @@ import (
 	"github.com/wxdqing/go-transformgen/internal/descriptor"
 	"github.com/wxdqing/go-transformgen/internal/model"
 	"github.com/wxdqing/go-transformgen/internal/msgidlock"
+	cpptarget "github.com/wxdqing/go-transformgen/internal/target/cpp"
 	csharptarget "github.com/wxdqing/go-transformgen/internal/target/csharp"
 	gotarget "github.com/wxdqing/go-transformgen/internal/target/go"
 )
@@ -56,6 +57,7 @@ func run(args []string) error {
 	var outDir string
 	var packageName string
 	var runtimeMode string
+	var cppProtoIncludePrefix string
 	goImports := importMap{}
 
 	fs := flag.NewFlagSet("transformgen", flag.ContinueOnError)
@@ -67,6 +69,7 @@ func run(args []string) error {
 	fs.StringVar(&outDir, "out", "", "output directory")
 	fs.StringVar(&packageName, "package", "", "output package or namespace")
 	fs.StringVar(&runtimeMode, "runtime", "emit", "runtime mode: emit or import")
+	fs.StringVar(&cppProtoIncludePrefix, "cpp-proto-include-prefix", "", "C++ include prefix for protoc *.pb.h headers")
 	fs.Var(goImports, "go-import", "Go import override key=value")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -93,7 +96,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	files, err := renderTarget(target, built, desc, packageName, splitCSV(side), runtimeMode, goImports)
+	files, err := renderTarget(target, built, desc, packageName, splitCSV(side), runtimeMode, goImports, cppProtoIncludePrefix)
 	if err != nil {
 		return err
 	}
@@ -122,7 +125,7 @@ type outputFile struct {
 	Content []byte
 }
 
-func renderTarget(target string, built *model.Model, desc *descriptor.Set, packageName string, sides []string, runtimeMode string, goImports importMap) ([]outputFile, error) {
+func renderTarget(target string, built *model.Model, desc *descriptor.Set, packageName string, sides []string, runtimeMode string, goImports importMap, cppProtoIncludePrefix string) ([]outputFile, error) {
 	switch target {
 	case "go":
 		files, err := gotarget.Render(built, gotarget.Options{
@@ -145,9 +148,29 @@ func renderTarget(target string, built *model.Model, desc *descriptor.Set, packa
 			return nil, err
 		}
 		return csharpOutputFiles(files), nil
+	case "cpp":
+		files, err := cpptarget.Render(built, cpptarget.Options{
+			Namespace:          packageName,
+			Sides:              sides,
+			Runtime:            cpptarget.RuntimeMode(runtimeMode),
+			ProtoIncludePrefix: cppProtoIncludePrefix,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return cppOutputFiles(files), nil
 	default:
 		return nil, fmt.Errorf("unsupported target %q", target)
 	}
+}
+
+// cppOutputFiles converts C++ target files to CLI output entries.
+func cppOutputFiles(files []cpptarget.File) []outputFile {
+	out := make([]outputFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, outputFile{Path: file.Path, Content: file.Content})
+	}
+	return out
 }
 
 func goOutputFiles(files []gotarget.File) []outputFile {

@@ -70,6 +70,22 @@ go run ./cmd/transformgen \
   --package Plan.Protocol
 ```
 
+Generate C++23 protocol helpers (message classes come from official `protoc --cpp_out`):
+
+```bash
+go run ./cmd/transformgen \
+  --proto-set example/transform/transform.pbset \
+  --defines-dir example/transform/defines \
+  --msgid-lock example/transform/msgid.lock.yaml \
+  --target cpp \
+  --side requester,responder \
+  --runtime emit \
+  --out example/transform/cpp \
+  --package transform
+```
+
+`--cpp-proto-include-prefix protos` changes generated includes to `#include "protos/heartbeat.pb.h"`.
+
 `*.pbset` files are ignored and can be regenerated at any time.
 
 Run the demo:

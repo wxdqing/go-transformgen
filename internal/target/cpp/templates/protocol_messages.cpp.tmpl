@@ -1,0 +1,37 @@
+#include "protocol_messages.hpp"
+
+namespace {{ .Namespace }} {
+namespace {
+
+// kMessageMetas is sorted by message id (matches generation order).
+constexpr MessageMeta kMessageMetas[] = {
+{{- range .Messages }}
+    {{"{"}}{{ .ID }}u, MessageKind::{{ .Kind }}, "{{ .FullName }}"{{"}"}},
+{{- end }}
+};
+
+}  // namespace
+
+const MessageMeta* FindMessageMeta(std::uint32_t message_id) noexcept {
+  // The table is small; scan linearly to keep the code obvious.
+  for (const MessageMeta& meta : kMessageMetas) {
+    if (meta.message_id == message_id) {
+      return &meta;
+    }
+  }
+  return nullptr;
+}
+
+std::unique_ptr<google::protobuf::Message> CreateMessage(std::uint32_t message_id) {
+  // Instantiate the official protoc C++ type for a known id.
+  switch (message_id) {
+{{- range .Messages }}
+    case {{ .ID }}u:
+      return std::make_unique<{{ .CppType }}>();
+{{- end }}
+    default:
+      return nullptr;
+  }
+}
+
+}  // namespace {{ .Namespace }}

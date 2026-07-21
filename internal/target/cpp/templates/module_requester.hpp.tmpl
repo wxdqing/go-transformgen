@@ -1,0 +1,42 @@
+#pragma once
+
+#include <functional>
+
+#include "protocol_messages.hpp"
+#include "protocol_runtime.hpp"
+
+namespace {{ .Namespace }}::{{ .Name }} {
+
+// Requester sends {{ .Name }} requests and receives responses and notifies.
+class Requester {
+ public:
+{{- range .RPCs }}
+  // {{ .Method }}ResponseCallback consumes one decoded {{ .Method }} response.
+  using {{ .Method }}ResponseCallback =
+      std::function<bool(const PacketContext&, const {{ .ResponseType }}&)>;
+{{- end }}
+{{- range .Notifies }}
+  // {{ .Method }}Callback consumes one decoded {{ .Method }} notify.
+  using {{ .Method }}Callback =
+      std::function<bool(const PacketContext&, const {{ .MessageType }}&)>;
+{{- end }}
+
+  explicit Requester(PacketEndpoint& endpoint);
+{{ range .RPCs }}
+  // Send{{ .Method }} serializes and sends one request; the caller owns
+  // request_id correlation through context.
+  bool Send{{ .Method }}(const PacketContext& context,
+                         const {{ .RequestType }}& request);
+
+  // On{{ .Method }}Response registers decode-and-dispatch for the response id.
+  bool On{{ .Method }}Response({{ .Method }}ResponseCallback callback);
+{{ end }}
+{{- range .Notifies }}
+  // On{{ .Method }} registers decode-and-dispatch for the notify id.
+  bool On{{ .Method }}({{ .Method }}Callback callback);
+{{ end }}
+ private:
+  PacketEndpoint* endpoint_;
+};
+
+}  // namespace {{ .Namespace }}::{{ .Name }}

@@ -1,0 +1,54 @@
+#include "{{ .Name }}_responder.hpp"
+
+namespace {{ .Namespace }}::{{ .Name }} {
+
+Responder::Responder(PacketEndpoint& endpoint, ResponderHandler& handler)
+    : endpoint_(&endpoint), handler_(&handler) {}
+
+bool Responder::RegisterHandlers() {
+  // Register one decode-invoke-reply callback per request id.
+{{- range .RPCs }}
+  if (!endpoint_->RegisterPacketCallback(
+          ToMessageId(EMsgToServerType::{{ .RequestEnum }}),
+          [endpoint = endpoint_, handler = handler_](
+              const PacketContext& context, const Packet& packet) {
+            {{ .RequestType }} request;
+            if (!request.ParseFromString(packet.payload)) {
+              return false;
+            }
+            {{ .ResponseType }} response;
+            if (!handler->{{ .Method }}(context, request, response)) {
+              return false;
+            }
+            Packet reply;
+            reply.message_id = ToMessageId(EMsgToClientType::{{ .ResponseEnum }});
+            if (!response.SerializeToString(&reply.payload)) {
+              return false;
+            }
+            // Preserve request correlation but let the endpoint allocate the
+            // server-to-client sequence independently from the uplink packet.
+            PacketContext reply_context = context;
+            reply_context.packet_seq = 0;
+            return endpoint->SendPacket(reply_context, reply);
+          })) {
+    return false;
+  }
+{{- end }}
+  return true;
+}
+{{ range .Notifies }}
+bool Responder::Send{{ .Method }}(const PacketContext& context,
+                                  const {{ .MessageType }}& message) {
+  // Notifies are uncorrelated; the endpoint allocates their downlink sequence.
+  Packet packet;
+  packet.message_id = ToMessageId(EMsgToClientType::{{ .MessageEnum }});
+  if (!message.SerializeToString(&packet.payload)) {
+    return false;
+  }
+  PacketContext notify_context = context;
+  notify_context.request_id = 0;
+  notify_context.packet_seq = 0;
+  return endpoint_->SendPacket(notify_context, packet);
+}
+{{ end }}
+}  // namespace {{ .Namespace }}::{{ .Name }}

@@ -200,6 +200,65 @@ rpcs:
 	}
 }
 
+// TestRunGeneratesCppProtocol verifies the CLI wires the C++ target end to end.
+func TestRunGeneratesCppProtocol(t *testing.T) {
+	// Prepare a minimal descriptor set and one module definition.
+	dir := t.TempDir()
+	protoSet := filepath.Join(dir, "transform.pbset")
+	definesDir := filepath.Join(dir, "defines")
+	outDir := filepath.Join(dir, "out")
+	if err := os.MkdirAll(definesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeDescriptorSet(t, protoSet)
+	if err := os.WriteFile(filepath.Join(definesDir, "player.yaml"), []byte(`version: 1
+model_name: player
+rpcs:
+  - method: Heartbeat
+    request: transform.HeartbeatRequest
+    response: transform.HeartbeatResponse
+    ctx: context.Context
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Generate with the C++ target and an include prefix.
+	err := run([]string{
+		"--proto-set", protoSet,
+		"--defines-dir", definesDir,
+		"--target", "cpp",
+		"--side", "requester,responder",
+		"--runtime", "emit",
+		"--out", outDir,
+		"--package", "transform",
+		"--cpp-proto-include-prefix", "protos/pb",
+	})
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	// Check enums, includes, and module classes in the emitted files.
+	header := readFile(t, filepath.Join(outDir, "protocol_messages.hpp"))
+	for _, want := range []string{
+		"namespace transform {",
+		"enum class EMsgToServerType : std::uint32_t {",
+		"enum class EMsgToClientType : std::uint32_t {",
+		"#include \"protos/pb/heartbeat.pb.h\"",
+	} {
+		if !strings.Contains(header, want) {
+			t.Fatalf("protocol_messages.hpp missing %q:\n%s", want, header)
+		}
+	}
+	requester := readFile(t, filepath.Join(outDir, "player_requester.hpp"))
+	if !strings.Contains(requester, "namespace transform::player {") || !strings.Contains(requester, "class Requester {") {
+		t.Fatalf("player_requester.hpp missing module namespace or class:\n%s", requester)
+	}
+	responder := readFile(t, filepath.Join(outDir, "player_responder.hpp"))
+	if !strings.Contains(responder, "class ResponderHandler {") {
+		t.Fatalf("player_responder.hpp missing handler interface:\n%s", responder)
+	}
+}
+
 func writeDescriptorSet(t *testing.T, path string) {
 	t.Helper()
 	set := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{{

@@ -1,0 +1,55 @@
+#include "{{ .Name }}_requester.hpp"
+
+#include <utility>
+
+namespace {{ .Namespace }}::{{ .Name }} {
+
+Requester::Requester(PacketEndpoint& endpoint) : endpoint_(&endpoint) {}
+{{ range .RPCs }}
+bool Requester::Send{{ .Method }}(const PacketContext& context,
+                                  const {{ .RequestType }}& request) {
+  // Serialize the payload and forward it with the request message id.
+  Packet packet;
+  packet.message_id = ToMessageId(EMsgToServerType::{{ .RequestEnum }});
+  if (!request.SerializeToString(&packet.payload)) {
+    return false;
+  }
+  return endpoint_->SendPacket(context, packet);
+}
+
+bool Requester::On{{ .Method }}Response({{ .Method }}ResponseCallback callback) {
+  if (callback == nullptr) {
+    return false;
+  }
+  // Decode the payload before invoking the typed callback.
+  return endpoint_->RegisterPacketCallback(
+      ToMessageId(EMsgToClientType::{{ .ResponseEnum }}),
+      [callback = std::move(callback)](const PacketContext& context,
+                                       const Packet& packet) {
+        {{ .ResponseType }} response;
+        if (!response.ParseFromString(packet.payload)) {
+          return false;
+        }
+        return callback(context, response);
+      });
+}
+{{ end }}
+{{- range .Notifies }}
+bool Requester::On{{ .Method }}({{ .Method }}Callback callback) {
+  if (callback == nullptr) {
+    return false;
+  }
+  // Decode the payload before invoking the typed callback.
+  return endpoint_->RegisterPacketCallback(
+      ToMessageId(EMsgToClientType::{{ .MessageEnum }}),
+      [callback = std::move(callback)](const PacketContext& context,
+                                       const Packet& packet) {
+        {{ .MessageType }} message;
+        if (!message.ParseFromString(packet.payload)) {
+          return false;
+        }
+        return callback(context, message);
+      });
+}
+{{ end }}
+}  // namespace {{ .Namespace }}::{{ .Name }}
